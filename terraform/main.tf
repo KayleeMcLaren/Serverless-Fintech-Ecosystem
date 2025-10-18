@@ -100,6 +100,7 @@ module "digital_wallet" {
   api_gateway_execution_arn    = aws_api_gateway_rest_api.api.execution_arn
   dynamodb_table_name          = aws_dynamodb_table.wallet_table.name
   dynamodb_table_arn           = aws_dynamodb_table.wallet_table.arn
+  sns_topic_arn                = aws_sns_topic.loan_events.arn
 }
 
 module "micro_loan" {

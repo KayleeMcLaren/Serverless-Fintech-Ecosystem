@@ -32,3 +32,8 @@ variable "dynamodb_table_arn" {
   description = "The ARN of the DynamoDB table for wallets."
   type        = string
 }
+
+variable "sns_topic_arn" {
+  description = "The ARN of the SNS topic for loan events"
+  type        = string
+}
