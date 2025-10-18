@@ -81,6 +81,12 @@ resource "aws_api_gateway_stage" "api_stage" {
   stage_name    = "v1"
 }
 
+# SNS Topic for loan status updates (e.g., approval)
+resource "aws_sns_topic" "loan_events" {
+  name = "${local.project_name}-loan-events"
+  tags = local.common_tags
+}
+
 
 # --- SERVICE MODULES ---
 
@@ -106,4 +112,5 @@ module "micro_loan" {
   api_gateway_execution_arn    = aws_api_gateway_rest_api.api.execution_arn
   dynamodb_table_name          = aws_dynamodb_table.loans_table.name
   dynamodb_table_arn           = aws_dynamodb_table.loans_table.arn
+  sns_topic_arn                = aws_sns_topic.loan_events.arn
 }
