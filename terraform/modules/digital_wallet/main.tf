@@ -40,7 +40,8 @@ resource "aws_iam_role_policy_attachment" "dynamodb_wallet_table_attachment" {
 # --- LAMBDA FUNCTIONS ---
 data "archive_file" "create_wallet_zip" {
   type        = "zip"
-  source_dir  = "/home/kaylee-dev/Desktop/Serverless-Fintech-Ecosystem/src/create_wallet"  # Correct path from terraform/modules
+  # Go up 3 levels to the project root, then down into src
+  source_dir  = "${path.module}/../../../src/create_wallet"
   output_path = "${path.module}/create_wallet.zip"
 }
 
@@ -62,7 +63,8 @@ resource "aws_lambda_function" "create_wallet_lambda" {
 
 data "archive_file" "get_wallet_zip" {
   type        = "zip"
-  source_dir  = "/home/kaylee-dev/Desktop/Serverless-Fintech-Ecosystem/src/get_wallet"  # Correct path from terraform/modules
+  # Go up 3 levels to the project root, then down into src
+  source_dir  = "${path.module}/../../../src/get_wallet"
   output_path = "${path.module}/get_wallet.zip"
 }
 
