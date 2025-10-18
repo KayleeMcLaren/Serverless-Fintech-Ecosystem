@@ -58,7 +58,13 @@ def request_payment(event, context):
         sns.publish(
             TopicArn=SNS_TOPIC_ARN,
             Message=json.dumps(sns_message, cls=DecimalEncoder),
-            Subject=f"Payment Requested: {transaction_id}"
+            Subject=f"Payment Requested: {transaction_id}",
+            MessageAttributes={
+                'event_type': {
+                    'DataType': 'String',
+                    'StringValue': 'PAYMENT_REQUESTED'
+                }
+            }
         )
 
         response_body = {

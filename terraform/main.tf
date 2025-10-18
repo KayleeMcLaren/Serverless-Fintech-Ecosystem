@@ -130,6 +130,7 @@ module "digital_wallet" {
   dynamodb_table_name          = aws_dynamodb_table.wallet_table.name
   dynamodb_table_arn           = aws_dynamodb_table.wallet_table.arn
   sns_topic_arn                = aws_sns_topic.loan_events.arn
+  payment_sns_topic_arn        = aws_sns_topic.payment_events.arn
 }
 
 module "micro_loan" {

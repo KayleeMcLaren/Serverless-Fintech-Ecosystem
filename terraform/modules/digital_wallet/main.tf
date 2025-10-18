@@ -48,6 +48,24 @@ resource "aws_iam_role_policy_attachment" "dynamodb_wallet_table_attachment" {
   policy_arn = aws_iam_policy.dynamodb_wallet_table_policy.arn
 }
 
+# --- IAM: SNS PUBLISH POLICY (PAYMENTS) ---
+data "aws_iam_policy_document" "sns_payment_publish_policy_doc" {
+  statement {
+    actions   = ["sns:Publish"]
+    resources = [var.payment_sns_topic_arn]
+  }
+}
+
+resource "aws_iam_policy" "sns_payment_publish_policy" {
+  name   = "${var.project_name}-wallet-payment-sns-publish-policy"
+  policy = data.aws_iam_policy_document.sns_payment_publish_policy_doc.json
+}
+
+resource "aws_iam_role_policy_attachment" "sns_payment_publish_attachment" {
+  role       = aws_iam_role.lambda_exec_role.name
+  policy_arn = aws_iam_policy.sns_payment_publish_policy.arn
+}
+
 ################################################################################
 # --- LAMBDA FUNCTIONS (API) ---
 # This section defines the serverless functions for our wallet API.
@@ -183,6 +201,48 @@ resource "aws_lambda_permission" "sns_invoke_permission" {
   function_name = aws_lambda_function.process_loan_approval_lambda.function_name
   principal     = "sns.amazonaws.com"
   source_arn    = var.sns_topic_arn
+}
+
+# --- LAMBDA: PROCESS PAYMENT REQUEST (SNS SUBSCRIBER) ---
+data "archive_file" "process_payment_request_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/process_payment_request"
+  output_path = "${path.module}/process_payment_request.zip"
+}
+
+resource "aws_lambda_function" "process_payment_request_lambda" {
+  function_name    = "${var.project_name}-process-payment-request"
+  role             = aws_iam_role.lambda_exec_role.arn
+  filename         = data.archive_file.process_payment_request_zip.output_path
+  source_code_hash = data.archive_file.process_payment_request_zip.output_base64sha256
+  handler          = "handler.process_payment_request"
+  runtime          = "python3.12"
+  tags             = var.tags
+  environment {
+    variables = {
+      DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      SNS_TOPIC_ARN       = var.payment_sns_topic_arn # The payment topic
+    }
+  }
+}
+
+# --- SNS SUBSCRIPTION & PERMISSION (PAYMENTS) ---
+resource "aws_sns_topic_subscription" "payment_request_subscription" {
+  topic_arn = var.payment_sns_topic_arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.process_payment_request_lambda.arn
+  # Add a filter policy so this Lambda only gets 'REQUESTED' events
+  filter_policy = jsonencode({
+    "event_type": ["PAYMENT_REQUESTED"]
+  })
+}
+
+resource "aws_lambda_permission" "sns_payment_invoke_permission" {
+  statement_id  = "AllowSNSPaymentInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.process_payment_request_lambda.function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = var.payment_sns_topic_arn
 }
 
 ################################################################################

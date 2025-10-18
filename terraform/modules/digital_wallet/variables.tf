@@ -37,3 +37,9 @@ variable "sns_topic_arn" {
   description = "The ARN of the SNS topic for loan events"
   type        = string
 }
+
+# Add this at the end of modules/digital_wallet/variables.tf
+variable "payment_sns_topic_arn" {
+  description = "The ARN of the SNS topic for payment events"
+  type        = string
+}

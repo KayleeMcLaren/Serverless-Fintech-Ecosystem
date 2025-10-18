@@ -25,8 +25,8 @@ data "aws_iam_policy_document" "dynamodb_transactions_table_policy_doc" {
   statement {
     actions = [
       "dynamodb:PutItem",
-      "dynamodb:GetItem"
-      # We will add UpdateItem when we build the listener
+      "dynamodb:GetItem",
+      "dynamodb:UpdateItem"
     ]
     resources = [
       var.dynamodb_table_arn,
@@ -54,7 +54,7 @@ data "aws_iam_policy_document" "sns_publish_policy_doc" {
 }
 
 resource "aws_iam_policy" "sns_publish_policy" {
-  name   = "${var.project_name}-payment-sns-publish-policy"
+  name   = "${var.project_name}-processor-payment-sns-publish-policy"
   policy = data.aws_iam_policy_document.sns_publish_policy_doc.json
 }
 
@@ -169,4 +169,45 @@ resource "aws_lambda_permission" "api_gateway_get_transaction_permission" {
   function_name = aws_lambda_function.get_transaction_status_lambda.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${var.api_gateway_execution_arn}/*/*"
+}
+
+# --- LAMBDA: UPDATE TRANSACTION STATUS (SNS SUBSCRIBER) ---
+data "archive_file" "update_transaction_status_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/update_transaction_status"
+  output_path = "${path.module}/update_transaction_status.zip"
+}
+
+resource "aws_lambda_function" "update_transaction_status_lambda" {
+  function_name    = "${var.project_name}-update-transaction-status"
+  role             = aws_iam_role.lambda_exec_role.arn
+  filename         = data.archive_file.update_transaction_status_zip.output_path
+  source_code_hash = data.archive_file.update_transaction_status_zip.output_base64sha256
+  handler          = "handler.update_transaction_status"
+  runtime          = "python3.12"
+  tags             = var.tags
+  environment {
+    variables = {
+      DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+    }
+  }
+}
+
+# --- SNS SUBSCRIPTION & PERMISSION (PAYMENT RESULTS) ---
+resource "aws_sns_topic_subscription" "payment_result_subscription" {
+  topic_arn = var.sns_topic_arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.update_transaction_status_lambda.arn
+  # Add a filter policy so this Lambda only gets 'RESULT' events
+  filter_policy = jsonencode({
+    "event_type": ["PAYMENT_SUCCESSFUL", "PAYMENT_FAILED"]
+  })
+}
+
+resource "aws_lambda_permission" "sns_payment_result_invoke_permission" {
+  statement_id  = "AllowSNSPaymentResultInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.update_transaction_status_lambda.function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = var.sns_topic_arn
 }
