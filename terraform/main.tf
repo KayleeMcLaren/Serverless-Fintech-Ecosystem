@@ -34,9 +34,14 @@ resource "aws_dynamodb_table" "wallet_table" {
 resource "aws_api_gateway_deployment" "api_deployment" {
   rest_api_id = aws_api_gateway_rest_api.api.id
 
+  # --- THIS IS THE UPDATED BLOCK ---
+  # It now listens to the output from the digital_wallet module.
+  # If any API integration in that module changes, this trigger
+  # will fire and create a new deployment.
   triggers = {
-    redeployment = sha1(jsonencode(module.digital_wallet.api_integrations))
+    redeployment = sha1(module.digital_wallet.api_integrations_json)
   }
+  # ---------------------------------
 
   lifecycle {
     create_before_destroy = true
@@ -44,9 +49,9 @@ resource "aws_api_gateway_deployment" "api_deployment" {
 }
 
 resource "aws_api_gateway_stage" "api_stage" {
-deployment_id = aws_api_gateway_deployment.api_deployment.id
-rest_api_id = aws_api_gateway_rest_api.api.id 
-stage_name  = "v1"
+  deployment_id = aws_api_gateway_deployment.api_deployment.id
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  stage_name    = "v1"
 }
 
 

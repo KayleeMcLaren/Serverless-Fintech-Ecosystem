@@ -1,7 +1,9 @@
-output "api_integrations" {
-  description = "A list of API gateway integrations created by this module."
-  value = [
+output "api_integrations_json" {
+  description = "A JSON string of all API integrations to trigger a new deployment."
+  value = jsonencode([
     aws_api_gateway_integration.create_lambda_integration,
-    aws_api_gateway_integration.get_lambda_integration
-  ]
+    aws_api_gateway_integration.get_lambda_integration,
+    aws_api_gateway_integration.credit_lambda_integration,
+    aws_api_gateway_integration.debit_lambda_integration,
+  ])
 }
