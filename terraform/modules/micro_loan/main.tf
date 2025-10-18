@@ -1,0 +1,96 @@
+# --- IAM ---
+# New, separate IAM Role for the Loan service.
+# It only has permission to write to the loans table.
+
+data "aws_iam_policy_document" "lambda_assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "lambda_exec_role" {
+  name               = "${var.project_name}-loan-lambda-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role_policy.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
+  role       = aws_iam_role.lambda_exec_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# Policy to allow writing to the new loans table
+data "aws_iam_policy_document" "dynamodb_loans_table_policy_doc" {
+  statement {
+    actions   = ["dynamodb:PutItem"] # Only needs PutItem for now
+    resources = [var.dynamodb_table_arn]
+  }
+}
+
+resource "aws_iam_policy" "dynamodb_loans_table_policy" {
+  name   = "${var.project_name}-loans-table-policy"
+  policy = data.aws_iam_policy_document.dynamodb_loans_table_policy_doc.json
+}
+
+resource "aws_iam_role_policy_attachment" "dynamodb_loans_table_attachment" {
+  role       = aws_iam_role.lambda_exec_role.name
+  policy_arn = aws_iam_policy.dynamodb_loans_table_policy.arn
+}
+
+# --- LAMBDA: APPLY FOR LOAN ---
+data "archive_file" "apply_for_loan_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/apply_for_loan" # Up 3 levels to root
+  output_path = "${path.module}/apply_for_loan.zip"
+}
+
+resource "aws_lambda_function" "apply_for_loan_lambda" {
+  function_name    = "${var.project_name}-apply-for-loan"
+  role             = aws_iam_role.lambda_exec_role.arn
+  filename         = data.archive_file.apply_for_loan_zip.output_path
+  source_code_hash = data.archive_file.apply_for_loan_zip.output_base64sha256
+  handler          = "handler.apply_for_loan"
+  runtime          = "python3.12"
+  tags             = var.tags
+  environment {
+    variables = {
+      DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+    }
+  }
+}
+
+# --- API GATEWAY: POST /loan ---
+resource "aws_api_gateway_resource" "loan_resource" {
+  rest_api_id = var.api_gateway_id
+  parent_id   = var.api_gateway_root_resource_id
+  path_part   = "loan"
+}
+
+resource "aws_api_gateway_method" "apply_for_loan_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.loan_resource.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "apply_for_loan_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id             = aws_api_gateway_resource.loan_resource.id
+  http_method             = aws_api_gateway_method.apply_for_loan_method.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.apply_for_loan_lambda.invoke_arn
+}
+
+# --- LAMBDA PERMISSION ---
+resource "aws_lambda_permission" "api_gateway_apply_loan_permission" {
+  statement_id  = "AllowAPIGatewayToInvokeApplyLoan"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.apply_for_loan_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${var.api_gateway_execution_arn}/*/*"
+}
