@@ -35,11 +35,19 @@ def create_wallet(event, context):
 
         return {
             "statusCode": 201,
+            "headers": {
+                "Access-Control-Allow-Origin": "http://localhost:5173", # Allow your React app
+                "Access-Control-Allow-Credentials": True # Optional, but often needed
+            },
             "body": json.dumps(response_body, cls=DecimalEncoder)
         }
     except Exception as e:
         print(f"Error: {e}")
         return {
-            "statusCode": 500,
-            "body": json.dumps({"message": "Failed to create wallet.", "error": str(e)})
-        }
+        "statusCode": 500,
+        "headers": { # Add headers here too
+            "Access-Control-Allow-Origin": "http://localhost:5173",
+            "Access-Control-Allow-Credentials": True
+        },
+        "body": json.dumps({"message": "Failed to create wallet.", "error": str(e)})
+    }
