@@ -21,28 +21,29 @@ def apply_for_loan(event, context):
     """Creates a new loan application with a 'PENDING' status."""
     try:
         body = json.loads(event.get('body', '{}'))
-        amount = Decimal(body.get('amount'))
+        
+        # Get all required fields
         wallet_id = body.get('wallet_id')
+        amount = Decimal(body.get('amount'))
+        interest_rate = Decimal(body.get('interest_rate'))     # NEW
+        minimum_payment = Decimal(body.get('minimum_payment')) # NEW
 
-        if not amount or amount <= 0:
+        if not all([wallet_id, amount, interest_rate, minimum_payment]) or amount <= 0:
             return {
                 "statusCode": 400,
-                "body": json.dumps({"message": "Valid positive amount is required."})
+                "body": json.dumps({"message": "wallet_id, amount, interest_rate, and minimum_payment are required."})
             }
         
-        if not wallet_id:
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"message": "wallet_id is required."})
-            }
-
         loan_id = str(uuid.uuid4())
         item = {
             'loan_id': loan_id,
             'wallet_id': wallet_id,
             'amount': amount,
-            'status': 'PENDING', # New loans are pending approval
-            'created_at': int(time.time())
+            'status': 'PENDING',
+            'created_at': int(time.time()),
+            'interest_rate': interest_rate,         
+            'minimum_payment': minimum_payment,   
+            'remaining_balance': amount           
         }
 
         table.put_item(Item=item)

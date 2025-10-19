@@ -111,10 +111,10 @@ resource "aws_api_gateway_deployment" "api_deployment" {
   rest_api_id = aws_api_gateway_rest_api.api.id
 
   # --- THIS IS THE UPDATED BLOCK ---
-  # We now combine the outputs from ALL FOUR modules.
+  # We now combine the outputs from ALL FIVE modules.
   triggers = {
     redeployment = sha1(
-      "${module.digital_wallet.api_integrations_json}${module.micro_loan.api_integrations_json}${module.payment_processor.api_integrations_json}${module.savings_goal.api_integrations_json}"
+      "${module.digital_wallet.api_integrations_json}${module.micro_loan.api_integrations_json}${module.payment_processor.api_integrations_json}${module.savings_goal.api_integrations_json}${module.debt_optimiser.api_integrations_json}"
     )
   }
   # ---------------------------------
@@ -197,4 +197,15 @@ module "savings_goal" {
   dynamodb_table_arn           = aws_dynamodb_table.savings_goals_table.arn
   wallets_table_name = module.digital_wallet.wallet_table_name
   wallets_table_arn  = module.digital_wallet.wallet_table_arn
+}
+
+module "debt_optimiser" {
+  source = "./modules/debt_optimiser"
+
+  project_name                 = local.project_name
+  tags                         = local.common_tags
+  api_gateway_id               = aws_api_gateway_rest_api.api.id
+  api_gateway_root_resource_id = aws_api_gateway_rest_api.api.root_resource_id
+  api_gateway_execution_arn    = aws_api_gateway_rest_api.api.execution_arn
+  loans_table_arn              = module.micro_loan.loans_table_arn
 }

@@ -8,3 +8,8 @@ output "api_integrations_json" {
     aws_api_gateway_integration.reject_loan_integration,
   ])
 }
+
+output "loans_table_arn" {
+  description = "The ARN of the micro-loans DynamoDB table"
+  value       = var.dynamodb_table_arn
+}
