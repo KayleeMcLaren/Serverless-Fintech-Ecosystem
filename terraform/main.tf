@@ -195,4 +195,6 @@ module "savings_goal" {
   api_gateway_execution_arn    = aws_api_gateway_rest_api.api.execution_arn
   dynamodb_table_name          = aws_dynamodb_table.savings_goals_table.name
   dynamodb_table_arn           = aws_dynamodb_table.savings_goals_table.arn
+  wallets_table_name = module.digital_wallet.wallet_table_name
+  wallets_table_arn  = module.digital_wallet.wallet_table_arn
 }

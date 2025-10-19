@@ -25,16 +25,23 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
 
 # --- IAM: DYNAMODB POLICY ---
 data "aws_iam_policy_document" "dynamodb_savings_table_policy_doc" {
+  # Statement 1: Permissions for the savings_goals_table
   statement {
     actions = [
       "dynamodb:PutItem",
       "dynamodb:Query",
-      "dynamodb:DeleteItem"
+      "dynamodb:DeleteItem",
+      "dynamodb:UpdateItem" # Add UpdateItem
     ]
     resources = [
       var.dynamodb_table_arn,
       "${var.dynamodb_table_arn}/index/*"
     ]
+  }
+  # Statement 2: Permissions for the wallets_table
+  statement {
+    actions   = ["dynamodb:UpdateItem"] # Only needs UpdateItem
+    resources = [var.wallets_table_arn]
   }
 }
 
@@ -119,6 +126,29 @@ resource "aws_lambda_function" "delete_savings_goal_lambda" {
   }
 }
 
+# --- LAMBDA: ADD TO SAVINGS GOAL ---
+data "archive_file" "add_to_savings_goal_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/add_to_savings_goal"
+  output_path = "${path.module}/add_to_savings_goal.zip"
+}
+
+resource "aws_lambda_function" "add_to_savings_goal_lambda" {
+  function_name    = "${var.project_name}-add-to-savings-goal"
+  role             = aws_iam_role.lambda_exec_role.arn
+  filename         = data.archive_file.add_to_savings_goal_zip.output_path
+  source_code_hash = data.archive_file.add_to_savings_goal_zip.output_base64sha256
+  handler          = "handler.add_to_savings_goal"
+  runtime          = "python3.12"
+  tags             = var.tags
+  environment {
+    variables = {
+      SAVINGS_TABLE_NAME = var.dynamodb_table_name
+      WALLETS_TABLE_NAME = var.wallets_table_name
+    }
+  }
+}
+
 ################################################################################
 # --- API GATEWAY ---
 # This section defines the HTTP endpoints that trigger our Lambda functions.
@@ -199,6 +229,29 @@ resource "aws_api_gateway_integration" "delete_savings_goal_integration" {
   uri                     = aws_lambda_function.delete_savings_goal_lambda.invoke_arn
 }
 
+# --- API: POST /savings-goal/{goal_id}/add ---
+resource "aws_api_gateway_resource" "add_to_goal_resource" {
+  rest_api_id = var.api_gateway_id
+  parent_id   = aws_api_gateway_resource.savings_goal_id_resource.id # Attaches to /savings-goal/{goal_id}
+  path_part   = "add"
+}
+
+resource "aws_api_gateway_method" "add_to_goal_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.add_to_goal_resource.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "add_to_goal_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id             = aws_api_gateway_resource.add_to_goal_resource.id
+  http_method             = aws_api_gateway_method.add_to_goal_method.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.add_to_savings_goal_lambda.invoke_arn
+}
+
 ################################################################################
 # --- LAMBDA PERMISSIONS ---
 # This section grants API Gateway permission to invoke our Lambda functions.
@@ -227,6 +280,15 @@ resource "aws_lambda_permission" "api_gateway_delete_savings_goal_permission" {
   statement_id  = "AllowAPIGatewayToInvokeDeleteSavingsGoal"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.delete_savings_goal_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${var.api_gateway_execution_arn}/*/*"
+}
+
+# --- PERMISSION: ADD TO SAVINGS GOAL ---
+resource "aws_lambda_permission" "api_gateway_add_to_goal_permission" {
+  statement_id  = "AllowAPIGatewayToInvokeAddToGoal"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.add_to_savings_goal_lambda.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${var.api_gateway_execution_arn}/*/*"
 }

@@ -4,5 +4,6 @@ output "api_integrations_json" {
     aws_api_gateway_integration.create_savings_goal_integration,
     aws_api_gateway_integration.get_savings_goals_integration,
     aws_api_gateway_integration.delete_savings_goal_integration,
+    aws_api_gateway_integration.add_to_goal_integration, 
   ])
 }

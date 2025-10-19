@@ -32,3 +32,13 @@ variable "dynamodb_table_arn" {
   description = "The ARN of the savings goals DynamoDB table"
   type        = string
 }
+
+variable "wallets_table_name" {
+  description = "The name of the wallets DynamoDB table"
+  type        = string
+}
+
+variable "wallets_table_arn" {
+  description = "The ARN of the wallets DynamoDB table"
+  type        = string
+}
