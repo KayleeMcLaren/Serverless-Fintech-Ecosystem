@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-// No need to import App.css anymore!
+import SavingsGoals from './SavingsGoals'; // Add this line
 
 // --- PASTE YOUR API URL HERE ---
 const API_URL = 'https://3p79xdboij.execute-api.us-east-1.amazonaws.com/v1';
@@ -232,6 +232,8 @@ function App() {
           </div>
         )}
       </div>
+      {/* It only renders fully if a wallet is loaded */}
+    <SavingsGoals walletId={wallet ? wallet.wallet_id : null} apiUrl={API_URL} />
     </div>
   );
 }

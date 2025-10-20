@@ -177,6 +177,60 @@ resource "aws_api_gateway_integration" "create_savings_goal_integration" {
   uri                     = aws_lambda_function.create_savings_goal_lambda.invoke_arn
 }
 
+# --- API: OPTIONS /savings-goal (CORS Preflight for POST) ---
+resource "aws_api_gateway_method" "create_savings_goal_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.savings_goal_resource.id # Use the base /savings-goal resource
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "create_savings_goal_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.savings_goal_resource.id
+  http_method             = aws_api_gateway_method.create_savings_goal_options_method.http_method
+  type                    = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "create_savings_goal_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.savings_goal_resource.id
+   http_method   = aws_api_gateway_method.create_savings_goal_options_method.http_method
+   status_code   = "200"
+   response_models = {
+     "application/json" = "Empty"
+   }
+   response_parameters = {
+     "method.response.header.Access-Control-Allow-Headers" = true,
+     "method.response.header.Access-Control-Allow-Methods" = true,
+     "method.response.header.Access-Control-Allow-Origin" = true,
+     "method.response.header.Access-Control-Allow-Credentials" = true
+   }
+}
+
+resource "aws_api_gateway_integration_response" "create_savings_goal_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.savings_goal_resource.id
+  http_method = aws_api_gateway_method.create_savings_goal_options_method.http_method
+  status_code = aws_api_gateway_method_response.create_savings_goal_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    # Allow POST and OPTIONS on this specific path
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'",
+    "method.response.header.Access-Control-Allow-Origin"  = "'http://localhost:5173'",
+    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
+  }
+
+  response_templates = {
+    "application/json" = ""
+  }
+  depends_on = [aws_api_gateway_integration.create_savings_goal_options_integration]
+}
+
 # --- API: GET /savings-goal/by-wallet/{wallet_id} ---
 resource "aws_api_gateway_resource" "savings_by_wallet_resource" {
   rest_api_id = var.api_gateway_id
