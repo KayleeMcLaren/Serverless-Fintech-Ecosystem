@@ -319,6 +319,64 @@ resource "aws_api_gateway_integration" "credit_lambda_integration" {
   uri                     = aws_lambda_function.credit_wallet_lambda.invoke_arn
 }
 
+# --- API: OPTIONS /wallet/{wallet_id}/credit (CORS Preflight) ---
+resource "aws_api_gateway_method" "credit_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.credit_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "credit_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.credit_resource.id
+  http_method             = aws_api_gateway_method.credit_options_method.http_method
+  type                    = "MOCK" # Use Mock integration
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "credit_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.credit_resource.id
+  http_method = aws_api_gateway_method.credit_options_method.http_method
+  status_code = aws_api_gateway_method_response.credit_options_200.status_code # Link to the method response status code
+
+  # Configure response headers here
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'",
+    "method.response.header.Access-Control-Allow-Origin"  = "'http://localhost:5173'",
+    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
+  }
+
+  # Mock integrations usually have empty templates here
+  response_templates = {
+    "application/json" = ""
+  }
+
+  # Explicitly depend on the integration if needed, though usually implicit
+  depends_on = [aws_api_gateway_integration.credit_options_integration]
+}
+
+# We also need to define the method response for OPTIONS
+resource "aws_api_gateway_method_response" "credit_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.credit_resource.id
+   http_method   = aws_api_gateway_method.credit_options_method.http_method
+   status_code   = "200"
+   response_models = {
+     "application/json" = "Empty"
+   }
+   response_parameters = {
+     "method.response.header.Access-Control-Allow-Headers" = true,
+     "method.response.header.Access-Control-Allow-Methods" = true,
+     "method.response.header.Access-Control-Allow-Origin" = true,
+      "method.response.header.Access-Control-Allow-Credentials" = true
+   }
+}
+
 # --- API: POST /wallet/{wallet_id}/debit (DEBIT) ---
 resource "aws_api_gateway_resource" "debit_resource" {
   rest_api_id = var.api_gateway_id
@@ -340,6 +398,61 @@ resource "aws_api_gateway_integration" "debit_lambda_integration" {
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.debit_wallet_lambda.invoke_arn
+}
+
+# --- API: OPTIONS /wallet/{wallet_id}/debit (CORS Preflight) ---
+resource "aws_api_gateway_method" "debit_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.debit_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "debit_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.debit_resource.id
+  http_method             = aws_api_gateway_method.debit_options_method.http_method
+  type                    = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "debit_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.debit_resource.id
+  http_method = aws_api_gateway_method.debit_options_method.http_method
+  status_code = aws_api_gateway_method_response.debit_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'",
+    "method.response.header.Access-Control-Allow-Origin"  = "'http://localhost:5173'",
+    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
+  }
+
+  response_templates = {
+    "application/json" = ""
+  }
+
+  depends_on = [aws_api_gateway_integration.debit_options_integration]
+}
+
+ # We also need to define the method response for OPTIONS
+resource "aws_api_gateway_method_response" "debit_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.debit_resource.id
+   http_method   = aws_api_gateway_method.debit_options_method.http_method
+   status_code   = "200"
+   response_models = {
+     "application/json" = "Empty"
+   }
+   response_parameters = {
+     "method.response.header.Access-Control-Allow-Headers" = true,
+     "method.response.header.Access-Control-Allow-Methods" = true,
+     "method.response.header.Access-Control-Allow-Origin" = true,
+     "method.response.header.Access-Control-Allow-Credentials" = true
+   }
 }
 
 

@@ -114,7 +114,8 @@ resource "aws_api_gateway_deployment" "api_deployment" {
   # We now combine the outputs from ALL FIVE modules.
   triggers = {
     redeployment = sha1(
-      "${module.digital_wallet.api_integrations_json}${module.micro_loan.api_integrations_json}${module.payment_processor.api_integrations_json}${module.savings_goal.api_integrations_json}${module.debt_optimiser.api_integrations_json}"
+      "${module.digital_wallet.api_gateway_config_hash}${module.micro_loan.api_gateway_config_hash}${module.payment_processor.api_gateway_config_hash}${module.savings_goal.api_gateway_config_hash}${module.debt_optimiser.api_gateway_config_hash}"
+      # NOTE: You will need to rename the output in other modules too!
     )
   }
   # ---------------------------------

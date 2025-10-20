@@ -33,16 +33,28 @@ def get_wallet(event, context):
         if not item:
             return {
                 "statusCode": 404,
+                "headers": {
+                    "Access-Control-Allow-Origin": "http://localhost:5173",
+                    "Access-Control-Allow-Credentials": True
+                },
                 "body": json.dumps({"message": "Wallet not found."})
             }
 
         return {
             "statusCode": 200,
+            "headers": { 
+                "Access-Control-Allow-Origin": "http://localhost:5173",
+                "Access-Control-Allow-Credentials": True
+            },
             "body": json.dumps(item, cls=DecimalEncoder)
         }
     except Exception as e:
         print(f"Error: {e}")
         return {
-            "statusCode": 500,
-            "body": json.dumps({"message": "Failed to retrieve wallet.", "error": str(e)})
-        }
+        "statusCode": 500,
+        "headers": { 
+            "Access-Control-Allow-Origin": "http://localhost:5173",
+            "Access-Control-Allow-Credentials": True
+        },
+        "body": json.dumps({"message": "Failed to retrieve wallet.", "error": str(e)})
+    }

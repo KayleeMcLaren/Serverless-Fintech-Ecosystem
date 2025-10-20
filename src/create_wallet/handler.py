@@ -45,7 +45,7 @@ def create_wallet(event, context):
         print(f"Error: {e}")
         return {
         "statusCode": 500,
-        "headers": { # Add headers here too
+        "headers": { 
             "Access-Control-Allow-Origin": "http://localhost:5173",
             "Access-Control-Allow-Credentials": True
         },

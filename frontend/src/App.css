@@ -1,17 +1,18 @@
-:root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color: #ffffff;
-  background-color: #242424;
-}
+/* --- Base Styles & App Container --- */
+/* :root styles are primarily in index.css */
 
 .App {
   text-align: center;
   max-width: 600px;
-  margin: 0 auto;
+  margin: 2rem auto; /* Center the container with top/bottom margin */
   padding: 2rem;
+  background-color: #ffffff; /* White background */
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Soft shadow */
+  box-sizing: border-box; /* Include padding/border in width */
 }
+
+/* --- Header --- */
 
 .App-header {
   display: flex;
@@ -19,19 +20,35 @@
   align-items: center;
   justify-content: center;
   font-size: calc(10px + 2vmin);
+  color: #34495e; /* Darker blue-grey */
+  width: 100%;
+  margin-bottom: 1rem;
+  box-sizing: border-box;
 }
 
+/* --- Card Styling --- */
+
 .card {
-  background-color: #333;
+  background-color: #f8f9fa; /* Very light grey */
+  border: 1px solid #d6dbdf; /* Light border */
   border-radius: 8px;
   padding: 1.5rem;
   margin-top: 2rem;
   width: 100%;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); /* Lighter shadow */
+  box-sizing: border-box;
 }
 
+.card h2 {
+  color: #34495e; /* Dark blue-grey heading */
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+}
+
+/* --- Buttons --- */
+
 button {
-  background-color: #5a4fcf;
+  background-color: #3498db; /* Primary blue */
   border: none;
   color: white;
   padding: 10px 20px;
@@ -46,35 +63,180 @@ button {
 }
 
 button:disabled {
-  background-color: #555;
+  background-color: #aed6f1; /* Lighter blue when disabled */
   cursor: not-allowed;
 }
 
 button:hover:not(:disabled) {
-  background-color: #7367ff;
+  background-color: #2980b9; /* Darker blue on hover */
 }
+
+/* Specific button colors for transactions */
+.credit-button {
+  background-color: #2ecc71; /* Green */
+}
+.credit-button:hover:not(:disabled) {
+  background-color: #27ae60; /* Darker Green */
+}
+
+.debit-button {
+  background-color: #e74c3c; /* Red */
+}
+.debit-button:hover:not(:disabled) {
+  background-color: #c0392b; /* Darker Red */
+}
+
+/* --- Wallet Details Display --- */
 
 .wallet-details {
   text-align: left;
   margin-top: 1.5rem;
-  background-color: #444;
+  background-color: #eaf2f8; /* Light blue background */
+  border: 1px solid #c8dbe8; /* Slightly darker blue border */
   padding: 1rem;
   border-radius: 5px;
+}
+
+.wallet-details h3 {
+  color: #2980b9; /* Darker blue for the heading */
+  margin-top: 0;
 }
 
 .wallet-details p {
   margin: 0.5rem 0;
   font-size: 1rem;
-  word-wrap: break-word;
+  word-wrap: break-word; /* Wrap long wallet IDs */
+}
+
+.wallet-details strong {
+  color: #34495e; /* Dark blue-grey for labels */
 }
 
 .wallet-details span {
-  color: #9f97ff;
+  color: #2980b9; /* Darker blue for values */
   font-family: monospace;
   font-size: 1.1rem;
 }
 
+/* --- Input Groups (General & Specific) --- */
+
+/* General Styling for Input + Button groups (like the Wallet ID fetch) */
+.input-group {
+  display: flex;
+  flex-wrap: wrap; /* Allow wrapping */
+  gap: 10px;
+  margin-bottom: 1rem;
+  align-items: stretch; /* Make items same height */
+}
+
+/* Inputs within any input group */
+.input-group input[type="text"],
+.input-group input[type="number"] {
+  flex-grow: 1;
+  flex-basis: 200px;
+  padding: 10px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  min-width: 150px;
+}
+
+/* Buttons within any input group */
+.input-group button {
+  flex-shrink: 0;
+  padding: 10px 15px;
+}
+
+
+/* --- Input Groups (General & Specific) --- */
+
+/* General Styling for Input + Button groups (like the Wallet ID fetch) */
+.input-group {
+  display: flex;
+  flex-wrap: wrap; /* Allow wrapping */
+  gap: 10px;
+  margin-bottom: 1rem;
+  align-items: stretch; /* Make items same height */
+}
+
+/* Inputs within any input group */
+.input-group input[type="text"],
+.input-group input[type="number"] {
+  flex-grow: 1;
+  flex-basis: 200px;
+  padding: 10px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  min-width: 150px;
+}
+
+/* Buttons within any input group */
+.input-group button {
+  flex-shrink: 0;
+  padding: 10px 15px;
+}
+
+/* --- Transaction Section --- */
+
+.transaction-section {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #c8dbe8; /* Separator line */
+}
+
+.transaction-section h4 {
+  color: #34495e;
+  margin-bottom: 1rem;
+}
+
+/* Input group specifically for the amount input */
+.amount-input-group input[type="number"] {
+  /* Make the amount input take full width */
+  width: 100%;
+  box-sizing: border-box; /* Include padding in width calculation */
+  margin-bottom: 0.5rem; /* Add space below input */
+}
+
+/* Container for the transaction buttons */
+.button-group {
+  text-align: center; /* Center the buttons */
+  margin-top: 0.5rem; /* Add space above buttons */
+}
+
+.button-group button {
+  margin: 0 5px; /* Add horizontal space between buttons */
+}
+
+
+/* Specific button colors (keep these) */
+.credit-button {
+  background-color: #2ecc71; /* Green */
+}
+.credit-button:hover:not(:disabled) {
+  background-color: #27ae60; /* Darker Green */
+}
+
+.debit-button {
+  background-color: #e74c3c; /* Red */
+}
+.debit-button:hover:not(:disabled) {
+  background-color: #c0392b; /* Darker Red */
+}
+
+/* --- Utility Styles --- */
+
 .error {
-  color: #ff6b6b;
+  color: #e74c3c; /* Red */
   font-size: 0.9rem;
+  background-color: #fadbd8; /* Light red background */
+  border: 1px solid #f1948a; /* Red border */
+  padding: 0.5rem;
+  border-radius: 4px;
+  margin-top: 1rem;
+  text-align: left; /* Align error text left */
+}
+
+p { /* General paragraph margin for spacing */
+  margin: 1rem 0;
 }
