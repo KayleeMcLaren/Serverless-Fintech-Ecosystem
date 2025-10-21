@@ -131,6 +131,59 @@ resource "aws_api_gateway_integration" "request_payment_integration" {
   uri                     = aws_lambda_function.request_payment_lambda.invoke_arn
 }
 
+# --- API: OPTIONS /payment (CORS Preflight for POST) ---
+resource "aws_api_gateway_method" "request_payment_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.payment_resource.id # On the /payment resource
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "request_payment_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.payment_resource.id
+  http_method             = aws_api_gateway_method.request_payment_options_method.http_method
+  type                    = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "request_payment_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.payment_resource.id
+   http_method   = aws_api_gateway_method.request_payment_options_method.http_method
+   status_code   = "200"
+   response_models = {
+     "application/json" = "Empty"
+   }
+   response_parameters = {
+     "method.response.header.Access-Control-Allow-Headers" = true,
+     "method.response.header.Access-Control-Allow-Methods" = true,
+     "method.response.header.Access-Control-Allow-Origin" = true,
+     "method.response.header.Access-Control-Allow-Credentials" = true
+   }
+}
+
+resource "aws_api_gateway_integration_response" "request_payment_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.payment_resource.id
+  http_method = aws_api_gateway_method.request_payment_options_method.http_method
+  status_code = aws_api_gateway_method_response.request_payment_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'", # Allow POST and OPTIONS
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'", # Use '*' for dev
+    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
+  }
+
+  response_templates = {
+    "application/json" = ""
+  }
+  depends_on = [aws_api_gateway_integration.request_payment_options_integration]
+}
+
 # --- API GATEWAY: GET /payment/{transaction_id} ---
 resource "aws_api_gateway_resource" "transaction_id_resource" {
   rest_api_id = var.api_gateway_id
@@ -152,6 +205,61 @@ resource "aws_api_gateway_integration" "get_transaction_status_integration" {
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.get_transaction_status_lambda.invoke_arn
+}
+
+# --- API: OPTIONS /payment/{transaction_id} (CORS Preflight for GET) ---
+# Although simple GETs don't *usually* need preflight, adding it doesn't hurt
+# and covers cases where custom headers might be added later.
+resource "aws_api_gateway_method" "get_transaction_status_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.transaction_id_resource.id # On the /{transaction_id} resource
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "get_transaction_status_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.transaction_id_resource.id
+  http_method             = aws_api_gateway_method.get_transaction_status_options_method.http_method
+  type                    = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "get_transaction_status_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.transaction_id_resource.id
+   http_method   = aws_api_gateway_method.get_transaction_status_options_method.http_method
+   status_code   = "200"
+   response_models = {
+     "application/json" = "Empty"
+   }
+   response_parameters = {
+     "method.response.header.Access-Control-Allow-Headers" = true,
+     "method.response.header.Access-Control-Allow-Methods" = true,
+     "method.response.header.Access-Control-Allow-Origin" = true,
+     "method.response.header.Access-Control-Allow-Credentials" = true
+   }
+}
+
+resource "aws_api_gateway_integration_response" "get_transaction_status_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.transaction_id_resource.id
+  http_method = aws_api_gateway_method.get_transaction_status_options_method.http_method
+  status_code = aws_api_gateway_method_response.get_transaction_status_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'", # Allow GET and OPTIONS
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'",
+    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
+  }
+
+  response_templates = {
+    "application/json" = ""
+  }
+  depends_on = [aws_api_gateway_integration.get_transaction_status_options_integration]
 }
 
 # --- API PERMISSIONS ---
