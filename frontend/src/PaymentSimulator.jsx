@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 
-// Helper to format currency
+// Keep formatCurrency helper
 const formatCurrency = (amount) => {
-  // Use try-catch for robustness if amount might be invalid
   try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    const numberAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(numberAmount)) return String(amount);
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numberAmount);
   } catch (e) {
-    return String(amount); // Fallback to string
+    return String(amount);
   }
 };
 
@@ -18,17 +19,16 @@ function PaymentSimulator({ walletId, apiUrl }) {
   const [merchantId, setMerchantId] = useState('');
   const [transactionToCheck, setTransactionToCheck] = useState('');
   const [checkedTransaction, setCheckedTransaction] = useState(null);
-  const [pollingIntervalId, setPollingIntervalId] = useState(null); // For auto-refresh
+  const [pollingIntervalId, setPollingIntervalId] = useState(null);
 
-  // --- Fetch transactions when walletId changes ---
-  useEffect(() => {
+  // --- Keep useEffect, fetchTransactions, handleRequestPayment, handleCheckTransaction, startPolling, stopPolling ---
+  // --- No changes needed in the JavaScript logic itself ---
+   useEffect(() => {
     if (walletId) {
       fetchTransactions();
     } else {
-      setTransactions([]); // Clear if no wallet ID
+      setTransactions([]);
     }
-
-    // Cleanup polling on component unmount or walletId change
     return () => {
       if (pollingIntervalId) {
         clearInterval(pollingIntervalId);
@@ -36,24 +36,14 @@ function PaymentSimulator({ walletId, apiUrl }) {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletId]); // Dependency array includes walletId
+  }, [walletId]);
 
-  // --- Fetch Transactions Function (Placeholder - Needs Backend Endpoint) ---
   const fetchTransactions = async () => {
     if (!walletId) return;
-    setLoading(true);
+    setLoading(true); // Maybe use a different loading state for list vs actions
     setError(null);
     try {
-      // NOTE: We haven't built a "get transactions by wallet" endpoint yet!
-      // This is a placeholder. We'll need to add this endpoint to the
-      // payment_processor module later. For now, it will just show empty.
       console.warn("fetchTransactions: 'GET /payment/by-wallet/{id}' endpoint not yet implemented.");
-      // Example call if endpoint existed:
-      // const response = await fetch(`${apiUrl}/payment/by-wallet/${encodeURIComponent(walletId)}`);
-      // if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-      // const data = await response.json();
-      // data.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
-      // setTransactions(data);
       setTransactions([]); // Temporarily set to empty
     } catch (e) {
       setError(`Failed to fetch transactions: ${e.message}`);
@@ -63,7 +53,6 @@ function PaymentSimulator({ walletId, apiUrl }) {
     }
   };
 
-  // --- Initiate Payment Function ---
   const handleRequestPayment = async (e) => {
     e.preventDefault();
     if (!walletId || !paymentAmount || !merchantId || parseFloat(paymentAmount) <= 0) {
@@ -72,7 +61,7 @@ function PaymentSimulator({ walletId, apiUrl }) {
     }
     setLoading(true);
     setError(null);
-    setCheckedTransaction(null); // Clear any previously checked transaction
+    setCheckedTransaction(null);
     try {
       const response = await fetch(`${apiUrl}/payment`, {
         method: 'POST',
@@ -83,30 +72,22 @@ function PaymentSimulator({ walletId, apiUrl }) {
           merchant_id: merchantId,
         }),
       });
-
-      // Check if response is JSON before parsing
       const contentType = response.headers.get("content-type");
       let responseBody;
       if (contentType && contentType.indexOf("application/json") !== -1) {
           responseBody = await response.json();
       } else {
-          // Handle non-JSON responses if necessary, or just read text
           const textResponse = await response.text();
           throw new Error(`Unexpected response format. Status: ${response.status}. Body: ${textResponse}`);
       }
-
       if (!response.ok) {
         throw new Error(responseBody?.message || `HTTP error! Status: ${response.status}`);
       }
-
       const pendingTx = responseBody.transaction;
       setPaymentAmount('');
       setMerchantId('');
-      // Add the new pending transaction optimistically
       setTransactions(prev => [pendingTx, ...prev.filter(tx => tx.transaction_id !== pendingTx.transaction_id)]);
-      // Start polling for this transaction's status
       startPolling(pendingTx.transaction_id);
-
     } catch (e) {
       setError(`Failed to initiate payment: ${e.message}`);
     } finally {
@@ -114,7 +95,6 @@ function PaymentSimulator({ walletId, apiUrl }) {
     }
   };
 
-  // --- Check Specific Transaction Status Function ---
   const handleCheckTransaction = async (txIdToCheck) => {
      const txId = txIdToCheck || transactionToCheck;
      if (!txId) {
@@ -126,8 +106,7 @@ function PaymentSimulator({ walletId, apiUrl }) {
     setCheckedTransaction(null);
     try {
       const response = await fetch(`${apiUrl}/payment/${encodeURIComponent(txId)}`);
-      const responseBody = await response.json(); // Assume API always returns JSON
-
+      const responseBody = await response.json();
       if (!response.ok) {
         if (response.status === 404) {
            throw new Error(`Transaction ID ${txId} not found.`);
@@ -135,9 +114,7 @@ function PaymentSimulator({ walletId, apiUrl }) {
         throw new Error(responseBody?.message || `HTTP error! Status: ${response.status}`);
       }
       setCheckedTransaction(responseBody);
-      // Update the list if this transaction is already there
       setTransactions(prev => prev.map(tx => tx.transaction_id === txId ? responseBody : tx));
-      // Stop polling if we manually checked and it's completed
       if (responseBody.status !== 'PENDING' && pollingIntervalId) {
          stopPolling();
       }
@@ -148,39 +125,29 @@ function PaymentSimulator({ walletId, apiUrl }) {
     }
   };
 
-  // --- Polling Logic ---
   const startPolling = (txId) => {
-    // Clear any existing interval
     stopPolling();
-
     console.log(`Starting polling for transaction: ${txId}`);
     const intervalId = setInterval(async () => {
       console.log(`Polling status for ${txId}...`);
       try {
         const response = await fetch(`${apiUrl}/payment/${encodeURIComponent(txId)}`);
          if (!response.ok) {
-             // If fetch fails (e.g., 404), stop polling
              console.error(`Polling failed for ${txId}. Status: ${response.status}`);
              stopPolling();
-             // Optionally set an error state here
              return;
          }
         const data = await response.json();
-        // Update the specific transaction in the list
         setTransactions(prev => prev.map(tx => tx.transaction_id === txId ? data : tx));
-
-        // If status is no longer PENDING, stop polling
         if (data.status !== 'PENDING') {
           console.log(`Transaction ${txId} completed with status: ${data.status}. Stopping polling.`);
           stopPolling();
         }
       } catch (error) {
         console.error(`Error during polling for ${txId}:`, error);
-        stopPolling(); // Stop polling on error
-        // Optionally set an error state
+        stopPolling();
       }
-    }, 5000); // Poll every 5 seconds
-
+    }, 5000);
     setPollingIntervalId(intervalId);
   };
 
@@ -195,24 +162,26 @@ function PaymentSimulator({ walletId, apiUrl }) {
 
   // --- Render Logic ---
   if (!walletId) {
-    return null; // Don't render if no wallet is active
+    return null;
   }
 
   return (
-    <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mt-8 shadow-sm">
-      <h2 className="text-xl font-semibold text-gray-700 mb-6 text-center">Payment Simulator</h2>
+    // Use neutral colors for card
+    <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mt-8 shadow-sm">
+      <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Payment Simulator</h2>
 
       {/* --- Loading and Error Display --- */}
-      {loading && <p className="text-center text-blue-600 my-4">Processing...</p>}
+      {loading && <p className="text-center text-primary-blue my-4">Processing...</p>}
+      {/* Use accent-red for error */}
       {error && (
-        <p className="my-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm text-left">
+        <p className="my-4 p-3 bg-accent-red-light border border-accent-red text-accent-red-dark rounded-md text-sm text-left">
           {error}
         </p>
       )}
 
       {/* --- Form to Initiate Payment --- */}
-      <form onSubmit={handleRequestPayment} className="mb-6 pb-4 border-b border-gray-200">
-        <h4 className="text-md font-semibold text-gray-700 mb-3">Make a Payment</h4>
+      <form onSubmit={handleRequestPayment} className="mb-6 pb-4 border-b border-neutral-200">
+        <h4 className="text-md font-semibold text-neutral-700 mb-3">Make a Payment</h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
           <input
             type="number"
@@ -221,23 +190,26 @@ function PaymentSimulator({ walletId, apiUrl }) {
             placeholder="Amount ($)"
             disabled={loading}
             min="0.01" step="0.01" required
-            className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+            // Use neutral border, primary focus
+            className="p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50"
           />
           <input
             type="text"
             value={merchantId}
             onChange={(e) => setMerchantId(e.target.value)}
-            placeholder="Merchant ID (e.g., store-abc)"
+            placeholder="Merchant ID"
             disabled={loading}
             required
-            className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 md:col-span-2" // Take more space on medium screens
+            // Use neutral border, primary focus
+            className="p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 md:col-span-2"
           />
         </div>
         <div className="text-center">
           <button
             type="submit"
             disabled={loading || !paymentAmount || !merchantId}
-            className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:bg-purple-300"
+            // Use different color, e.g., indigo or keep primary blue
+            className="px-4 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-indigo-300"
           >
             {loading ? 'Processing...' : 'Submit Payment'}
           </button>
@@ -245,8 +217,8 @@ function PaymentSimulator({ walletId, apiUrl }) {
       </form>
 
       {/* --- Check Specific Transaction --- */}
-      <div className="mb-6 pb-4 border-b border-gray-200">
-          <h4 className="text-md font-semibold text-gray-700 mb-3">Check Transaction Status</h4>
+      <div className="mb-6 pb-4 border-b border-neutral-200">
+          <h4 className="text-md font-semibold text-neutral-700 mb-3">Check Transaction Status</h4>
           <div className="flex flex-wrap gap-3 mb-4 items-stretch">
               <input
                   type="text"
@@ -254,56 +226,61 @@ function PaymentSimulator({ walletId, apiUrl }) {
                   onChange={(e) => setTransactionToCheck(e.target.value)}
                   placeholder="Enter Transaction ID"
                   disabled={loading}
-                  className="flex-grow basis-60 p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 min-w-[150px]"
+                  // Use neutral border, primary focus
+                  className="flex-grow basis-60 p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 min-w-[150px]"
               />
               <button
                   onClick={() => handleCheckTransaction()}
                   disabled={loading || !transactionToCheck}
-                  className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:bg-gray-300 flex-shrink-0"
+                  // Use neutral button colors
+                  className="px-4 py-2 bg-neutral-500 text-white rounded-md hover:bg-neutral-600 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:bg-neutral-300 flex-shrink-0"
               >
                   {loading ? 'Checking...' : 'Check Status'}
               </button>
           </div>
           {checkedTransaction && (
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-xs">
-                  <p>Status for {checkedTransaction.transaction_id}:
+              // Use primary blue light background
+              <div className="mt-4 p-3 bg-primary-blue-light/20 border border-primary-blue/30 rounded-md text-xs">
+                  <p className="text-neutral-700">Status for {checkedTransaction.transaction_id}:
+                       {/* Use theme colors for status */}
                       <span className={`ml-2 font-semibold ${
-                          checkedTransaction.status === 'SUCCESSFUL' ? 'text-green-700' :
-                          checkedTransaction.status === 'FAILED' ? 'text-red-700' :
-                          'text-yellow-700' // PENDING
+                          checkedTransaction.status === 'SUCCESSFUL' ? 'text-accent-green-dark' :
+                          checkedTransaction.status === 'FAILED' ? 'text-accent-red-dark' :
+                          'text-yellow-600' // PENDING
                       }`}>
                           {checkedTransaction.status}
                       </span>
                   </p>
-                  {/* Optionally display more details */}
               </div>
           )}
       </div>
 
       {/* --- Display Recent Transactions --- */}
       <div>
-        <h4 className="text-md font-semibold text-gray-700 mb-3">Recent Transactions</h4>
+        <h4 className="text-md font-semibold text-neutral-700 mb-3">Recent Transactions</h4>
         {!loading && transactions.length === 0 && (
-          <p className="text-center text-gray-500 my-4">No recent transactions to display. (Endpoint not implemented or none found).</p>
+          <p className="text-center text-neutral-500 my-4">No recent transactions to display. (Endpoint not implemented or none found).</p>
         )}
         {!loading && transactions.length > 0 && (
           <div className="space-y-3">
             {transactions.map((tx) => (
-              <div key={tx.transaction_id} className="p-3 bg-white border border-gray-200 rounded-md shadow-sm text-sm">
+              // Use neutral colors for transaction item
+              <div key={tx.transaction_id} className="p-3 bg-white border border-neutral-200 rounded-md shadow-sm text-sm">
                 <div className="flex justify-between items-center mb-1">
+                   {/* Status badge - use theme colors */}
                   <span className={`font-medium px-2 py-0.5 rounded text-xs ${
-                      tx.status === 'SUCCESSFUL' ? 'bg-green-100 text-green-800' :
-                      tx.status === 'FAILED' ? 'bg-red-100 text-red-800' :
+                      tx.status === 'SUCCESSFUL' ? 'bg-accent-green-light text-accent-green-dark' :
+                      tx.status === 'FAILED' ? 'bg-accent-red-light text-accent-red-dark' :
                       'bg-yellow-100 text-yellow-800' // PENDING
                   }`}>
                       {tx.status}
                   </span>
-                  <span className="text-gray-600">{formatCurrency(tx.amount)}</span>
+                  <span className="text-neutral-600">{formatCurrency(tx.amount)}</span>
                 </div>
-                 <p className="text-xs text-gray-500">To: {tx.merchant_id}</p>
-                 <p className="text-xs text-gray-400 mt-1 truncate">ID: {tx.transaction_id}</p>
+                 <p className="text-xs text-neutral-500">To: {tx.merchant_id}</p>
+                 <p className="text-xs text-neutral-400 mt-1 truncate">ID: {tx.transaction_id}</p>
                  {tx.updated_at && (
-                    <p className="text-xs text-gray-400">Updated: {new Date(tx.updated_at * 1000).toLocaleString()}</p>
+                    <p className="text-xs text-neutral-400">Updated: {new Date(tx.updated_at * 1000).toLocaleString()}</p>
                  )}
               </div>
             ))}

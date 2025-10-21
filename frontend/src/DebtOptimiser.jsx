@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 
-// Helper to format currency
+// Keep formatCurrency helper
 const formatCurrency = (amount) => {
   try {
-    // Attempt to convert to number if it's a string representation
     const numberAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(numberAmount)) return String(amount); // Handle non-numeric gracefully
+    if (isNaN(numberAmount)) return String(amount);
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numberAmount);
   } catch (e) {
     console.error("Error formatting currency:", amount, e);
-    return String(amount); // Fallback
+    return String(amount);
   }
 };
 
@@ -19,8 +18,9 @@ function DebtOptimiser({ walletId, apiUrl }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // --- Calculate Repayment Plan Function ---
-  const handleCalculate = async (e) => {
+  // --- Keep handleCalculate ---
+  // --- No changes needed in the JavaScript logic itself ---
+   const handleCalculate = async (e) => {
     e.preventDefault();
     if (!walletId || !budget || parseFloat(budget) <= 0) {
       setError('Please provide a valid wallet ID and a positive monthly budget.');
@@ -29,7 +29,7 @@ function DebtOptimiser({ walletId, apiUrl }) {
     }
     setLoading(true);
     setError(null);
-    setResults(null); // Clear previous results
+    setResults(null);
     try {
       const response = await fetch(`${apiUrl}/debt-optimiser`, {
         method: 'POST',
@@ -51,18 +51,20 @@ function DebtOptimiser({ walletId, apiUrl }) {
     }
   };
 
+
   // --- Render Logic ---
   if (!walletId) {
-    return null; // Don't render if no wallet is active
+    return null;
   }
 
   return (
-    <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mt-8 shadow-sm">
-      <h2 className="text-xl font-semibold text-gray-700 mb-6 text-center">Debt Repayment Optimiser</h2>
+    // Use neutral colors for card
+    <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mt-8 shadow-sm">
+      <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Debt Repayment Optimiser</h2>
 
       {/* --- Input Form --- */}
-      <form onSubmit={handleCalculate} className="mb-6 pb-4 border-b border-gray-200">
-        <h4 className="text-md font-semibold text-gray-700 mb-3">Calculate Payoff Plan</h4>
+      <form onSubmit={handleCalculate} className="mb-6 pb-4 border-b border-neutral-200">
+        <h4 className="text-md font-semibold text-neutral-700 mb-3">Calculate Payoff Plan</h4>
         <div className="flex flex-wrap gap-3 mb-3 items-stretch">
           <input
             type="number"
@@ -71,11 +73,13 @@ function DebtOptimiser({ walletId, apiUrl }) {
             placeholder="Total Monthly Budget ($)"
             disabled={loading}
             min="1" step="0.01" required
-            className="flex-grow basis-40 p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 min-w-[150px]"
+            // Use neutral border, primary focus
+            className="flex-grow basis-40 p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 min-w-[150px]"
           />
           <button
             type="submit"
             disabled={loading || !budget}
+            // Use different color, e.g., teal or primary blue
             className="px-4 py-2 bg-teal-500 text-white rounded-md hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:bg-teal-300 flex-shrink-0"
           >
             {loading ? 'Calculating...' : 'Calculate Plans'}
@@ -84,9 +88,10 @@ function DebtOptimiser({ walletId, apiUrl }) {
       </form>
 
       {/* --- Loading and Error Display --- */}
-      {loading && <p className="text-center text-blue-600 my-4">Calculating repayment plans...</p>}
+      {loading && <p className="text-center text-primary-blue my-4">Calculating repayment plans...</p>}
+      {/* Use accent-red for error */}
       {error && (
-        <p className="my-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm text-left">
+        <p className="my-4 p-3 bg-accent-red-light border border-accent-red text-accent-red-dark rounded-md text-sm text-left">
           {error}
         </p>
       )}
@@ -94,39 +99,39 @@ function DebtOptimiser({ walletId, apiUrl }) {
       {/* --- Display Results --- */}
       {results && !loading && (
         <div className="mt-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4 text-center">Comparison Results</h3>
+          <h3 className="text-lg font-semibold text-neutral-800 mb-4 text-center">Comparison Results</h3>
 
-          {/* Summary Section */}
-          <div className="mb-6 p-4 bg-white border border-gray-200 rounded-md shadow-sm text-sm">
-              <h4 className="font-medium text-gray-700 mb-2">Summary</h4>
-              <p>Total Approved Loans: <span className="font-semibold">{results.summary.total_loans}</span></p>
-              <p>Total Minimum Payment: <span className="font-semibold">{formatCurrency(results.summary.total_minimum_payment)}</span></p>
-              <p>Your Monthly Budget: <span className="font-semibold">{formatCurrency(results.summary.monthly_budget)}</span></p>
-              <p>Extra Payment Applied: <span className="font-semibold text-green-600">{formatCurrency(results.summary.extra_payment)}</span></p>
+          {/* Summary Section - Use neutral colors */}
+          <div className="mb-6 p-4 bg-white border border-neutral-200 rounded-md shadow-sm text-sm">
+              <h4 className="font-medium text-neutral-700 mb-2">Summary</h4>
+              <p className="text-neutral-600">Total Approved Loans: <span className="font-semibold text-neutral-800">{results.summary.total_loans}</span></p>
+              <p className="text-neutral-600">Total Minimum Payment: <span className="font-semibold text-neutral-800">{formatCurrency(results.summary.total_minimum_payment)}</span></p>
+              <p className="text-neutral-600">Your Monthly Budget: <span className="font-semibold text-neutral-800">{formatCurrency(results.summary.monthly_budget)}</span></p>
+              <p className="text-neutral-600">Extra Payment Applied: <span className="font-semibold text-accent-green-dark">{formatCurrency(results.summary.extra_payment)}</span></p>
           </div>
 
           {/* Results Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Avalanche Plan */}
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-md shadow-sm">
-              <h4 className="font-medium text-blue-800 mb-2">Avalanche Plan</h4>
-              <p className="text-sm">Payoff Time: <span className="font-semibold">{results.avalanche_plan.months_to_payoff} months</span></p>
-              <p className="text-sm">Total Interest Paid: <span className="font-semibold">{formatCurrency(results.avalanche_plan.total_interest_paid)}</span></p>
-              <p className="text-xs text-gray-500 mt-1">(Targets highest interest rate first)</p>
+            {/* Avalanche Plan - Use primary blue theme */}
+            <div className="p-4 bg-primary-blue-light/20 border border-primary-blue/30 rounded-md shadow-sm">
+              <h4 className="font-medium text-primary-blue-dark mb-2">Avalanche Plan</h4>
+              <p className="text-sm text-neutral-700">Payoff Time: <span className="font-semibold text-neutral-900">{results.avalanche_plan.months_to_payoff} months</span></p>
+              <p className="text-sm text-neutral-700">Total Interest Paid: <span className="font-semibold text-neutral-900">{formatCurrency(results.avalanche_plan.total_interest_paid)}</span></p>
+              <p className="text-xs text-neutral-500 mt-1">(Targets highest interest rate first)</p>
             </div>
 
-            {/* Snowball Plan */}
-            <div className="p-4 bg-purple-50 border border-purple-200 rounded-md shadow-sm">
+            {/* Snowball Plan - Use different theme, e.g., purple or neutral */}
+            <div className="p-4 bg-purple-50 border border-purple-200 rounded-md shadow-sm"> {/* Example: Purple theme */}
               <h4 className="font-medium text-purple-800 mb-2">Snowball Plan</h4>
-              <p className="text-sm">Payoff Time: <span className="font-semibold">{results.snowball_plan.months_to_payoff} months</span></p>
-              <p className="text-sm">Total Interest Paid: <span className="font-semibold">{formatCurrency(results.snowball_plan.total_interest_paid)}</span></p>
-               <p className="text-xs text-gray-500 mt-1">(Targets lowest balance first)</p>
+              <p className="text-sm text-neutral-700">Payoff Time: <span className="font-semibold text-neutral-900">{results.snowball_plan.months_to_payoff} months</span></p>
+              <p className="text-sm text-neutral-700">Total Interest Paid: <span className="font-semibold text-neutral-900">{formatCurrency(results.snowball_plan.total_interest_paid)}</span></p>
+               <p className="text-xs text-neutral-500 mt-1">(Targets lowest balance first)</p>
             </div>
           </div>
 
-           {/* Recommendation (Simple Example) */}
-           <div className="mt-6 text-center p-3 bg-green-50 border border-green-200 rounded-md">
-                <p className="font-semibold text-green-800">
+           {/* Recommendation - Use accent green theme */}
+           <div className="mt-6 text-center p-3 bg-accent-green-light border border-accent-green/50 rounded-md">
+                <p className="font-semibold text-accent-green-dark">
                     Recommendation: The '{parseFloat(results.avalanche_plan.total_interest_paid) < parseFloat(results.snowball_plan.total_interest_paid) ? 'Avalanche' : 'Snowball'}'
                     plan will likely save you the most money on interest.
                 </p>
