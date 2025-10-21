@@ -89,6 +89,59 @@ resource "aws_api_gateway_integration" "calculate_repayment_plan_integration" {
   uri                     = aws_lambda_function.calculate_repayment_plan_lambda.invoke_arn
 }
 
+# --- API: OPTIONS /debt-optimiser (CORS Preflight for POST) ---
+resource "aws_api_gateway_method" "calculate_repayment_plan_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.debt_optimiser_resource.id # On the /debt-optimiser resource
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "calculate_repayment_plan_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.debt_optimiser_resource.id
+  http_method             = aws_api_gateway_method.calculate_repayment_plan_options_method.http_method
+  type                    = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "calculate_repayment_plan_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.debt_optimiser_resource.id
+   http_method   = aws_api_gateway_method.calculate_repayment_plan_options_method.http_method
+   status_code   = "200"
+   response_models = {
+     "application/json" = "Empty"
+   }
+   response_parameters = {
+     "method.response.header.Access-Control-Allow-Headers" = true,
+     "method.response.header.Access-Control-Allow-Methods" = true,
+     "method.response.header.Access-Control-Allow-Origin" = true,
+     "method.response.header.Access-Control-Allow-Credentials" = true
+   }
+}
+
+resource "aws_api_gateway_integration_response" "calculate_repayment_plan_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.debt_optimiser_resource.id
+  http_method = aws_api_gateway_method.calculate_repayment_plan_options_method.http_method
+  status_code = aws_api_gateway_method_response.calculate_repayment_plan_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'", # Allow POST and OPTIONS
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'", # Use '*' for dev
+    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
+  }
+
+  response_templates = {
+    "application/json" = ""
+  }
+  depends_on = [aws_api_gateway_integration.calculate_repayment_plan_options_integration]
+}
+
 # --- API PERMISSION ---
 resource "aws_lambda_permission" "api_gateway_calculate_plan_permission" {
   statement_id  = "AllowAPIGatewayToInvokeCalculatePlan"
