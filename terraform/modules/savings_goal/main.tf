@@ -221,7 +221,7 @@ resource "aws_api_gateway_integration_response" "create_savings_goal_options_int
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
     # Allow POST and OPTIONS on this specific path
     "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'",
-    "method.response.header.Access-Control-Allow-Origin"  = "'http://localhost:5173'",
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'",
     "method.response.header.Access-Control-Allow-Credentials" = "'true'"
   }
 
@@ -283,6 +283,61 @@ resource "aws_api_gateway_integration" "delete_savings_goal_integration" {
   uri                     = aws_lambda_function.delete_savings_goal_lambda.invoke_arn
 }
 
+# --- API: OPTIONS /savings-goal/{goal_id} (CORS Preflight for DELETE) ---
+resource "aws_api_gateway_method" "delete_savings_goal_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.savings_goal_id_resource.id # Use the /{goal_id} resource
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "delete_savings_goal_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.savings_goal_id_resource.id
+  http_method             = aws_api_gateway_method.delete_savings_goal_options_method.http_method
+  type                    = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "delete_savings_goal_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.savings_goal_id_resource.id
+   http_method   = aws_api_gateway_method.delete_savings_goal_options_method.http_method
+   status_code   = "200"
+   response_models = {
+     "application/json" = "Empty"
+   }
+   response_parameters = {
+     "method.response.header.Access-Control-Allow-Headers" = true,
+     "method.response.header.Access-Control-Allow-Methods" = true,
+     "method.response.header.Access-Control-Allow-Origin" = true,
+     "method.response.header.Access-Control-Allow-Credentials" = true
+   }
+}
+
+resource "aws_api_gateway_integration_response" "delete_savings_goal_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.savings_goal_id_resource.id
+  http_method = aws_api_gateway_method.delete_savings_goal_options_method.http_method
+  status_code = aws_api_gateway_method_response.delete_savings_goal_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    # Allow DELETE and OPTIONS on this specific path
+    "method.response.header.Access-Control-Allow-Methods" = "'DELETE,OPTIONS'",
+    # Use "*" for now, or your CloudFront URL for production
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'",
+    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
+  }
+
+  response_templates = {
+    "application/json" = ""
+  }
+  depends_on = [aws_api_gateway_integration.delete_savings_goal_options_integration]
+}
+
 # --- API: POST /savings-goal/{goal_id}/add ---
 resource "aws_api_gateway_resource" "add_to_goal_resource" {
   rest_api_id = var.api_gateway_id
@@ -304,6 +359,60 @@ resource "aws_api_gateway_integration" "add_to_goal_integration" {
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.add_to_savings_goal_lambda.invoke_arn
+}
+
+# --- API: OPTIONS /savings-goal/{goal_id}/add (CORS Preflight) ---
+resource "aws_api_gateway_method" "add_to_goal_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.add_to_goal_resource.id # Use the /add resource
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "add_to_goal_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.add_to_goal_resource.id
+  http_method             = aws_api_gateway_method.add_to_goal_options_method.http_method
+  type                    = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "add_to_goal_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.add_to_goal_resource.id
+   http_method   = aws_api_gateway_method.add_to_goal_options_method.http_method
+   status_code   = "200"
+   response_models = {
+     "application/json" = "Empty"
+   }
+   response_parameters = {
+     "method.response.header.Access-Control-Allow-Headers" = true,
+     "method.response.header.Access-Control-Allow-Methods" = true,
+     "method.response.header.Access-Control-Allow-Origin" = true,
+     "method.response.header.Access-Control-Allow-Credentials" = true
+   }
+}
+
+resource "aws_api_gateway_integration_response" "add_to_goal_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.add_to_goal_resource.id
+  http_method = aws_api_gateway_method.add_to_goal_options_method.http_method
+  status_code = aws_api_gateway_method_response.add_to_goal_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    # Allow POST and OPTIONS on this specific path
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'",
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'", # Use '*' for now
+    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
+  }
+
+  response_templates = {
+    "application/json" = ""
+  }
+  depends_on = [aws_api_gateway_integration.add_to_goal_options_integration]
 }
 
 ################################################################################

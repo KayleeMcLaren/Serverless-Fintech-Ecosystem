@@ -5,7 +5,7 @@ from urllib.parse import unquote
 from botocore.exceptions import ClientError # Import ClientError
 
 # --- CORS Configuration ---
-ALLOWED_ORIGIN = "http://localhost:5173"
+ALLOWED_ORIGIN = "*"
 OPTIONS_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "DELETE, OPTIONS", # Allow DELETE

@@ -34,7 +34,7 @@ def get_wallet(event, context):
             return {
                 "statusCode": 404,
                 "headers": {
-                    "Access-Control-Allow-Origin": "http://localhost:5173",
+                    "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Credentials": True
                 },
                 "body": json.dumps({"message": "Wallet not found."})
@@ -43,7 +43,7 @@ def get_wallet(event, context):
         return {
             "statusCode": 200,
             "headers": { 
-                "Access-Control-Allow-Origin": "http://localhost:5173",
+                "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Credentials": True
             },
             "body": json.dumps(item, cls=DecimalEncoder)
@@ -53,7 +53,7 @@ def get_wallet(event, context):
         return {
         "statusCode": 500,
         "headers": { 
-            "Access-Control-Allow-Origin": "http://localhost:5173",
+            "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Credentials": True
         },
         "body": json.dumps({"message": "Failed to retrieve wallet.", "error": str(e)})

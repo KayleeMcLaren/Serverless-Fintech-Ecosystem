@@ -36,7 +36,7 @@ def create_wallet(event, context):
         return {
             "statusCode": 201,
             "headers": {
-                "Access-Control-Allow-Origin": "http://localhost:5173", # Allow your React app
+                "Access-Control-Allow-Origin": "*", # Allow your React app
                 "Access-Control-Allow-Credentials": True # Optional, but often needed
             },
             "body": json.dumps(response_body, cls=DecimalEncoder)
@@ -46,7 +46,7 @@ def create_wallet(event, context):
         return {
         "statusCode": 500,
         "headers": { 
-            "Access-Control-Allow-Origin": "http://localhost:5173",
+            "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Credentials": True
         },
         "body": json.dumps({"message": "Failed to create wallet.", "error": str(e)})

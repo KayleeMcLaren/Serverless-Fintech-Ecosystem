@@ -11,7 +11,7 @@ dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(TABLE_NAME)
 
 # Define allowed origin
-ALLOWED_ORIGIN = "http://localhost:5173"
+ALLOWED_ORIGIN = "*"
 
 # Define CORS headers for OPTIONS response
 OPTIONS_CORS_HEADERS = {

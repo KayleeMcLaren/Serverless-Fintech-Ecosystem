@@ -196,8 +196,8 @@ module "savings_goal" {
   api_gateway_execution_arn    = aws_api_gateway_rest_api.api.execution_arn
   dynamodb_table_name          = aws_dynamodb_table.savings_goals_table.name
   dynamodb_table_arn           = aws_dynamodb_table.savings_goals_table.arn
-  wallets_table_name = module.digital_wallet.wallet_table_name
-  wallets_table_arn  = module.digital_wallet.wallet_table_arn
+  wallets_table_name           = module.digital_wallet.wallet_table_name
+  wallets_table_arn            = module.digital_wallet.wallet_table_arn
 }
 
 module "debt_optimiser" {
@@ -209,4 +209,139 @@ module "debt_optimiser" {
   api_gateway_root_resource_id = aws_api_gateway_rest_api.api.root_resource_id
   api_gateway_execution_arn    = aws_api_gateway_rest_api.api.execution_arn
   loans_table_arn              = module.micro_loan.loans_table_arn
+}
+
+# --- FRONTEND DEPLOYMENT (S3 & CloudFront) ---
+
+# --- S3 Bucket for Frontend Static Files ---
+resource "aws_s3_bucket" "frontend_bucket" {
+  bucket = "${local.project_name}-frontend-bucket-${random_id.bucket_suffix.hex}" # Unique bucket name
+
+  tags = local.common_tags
+}
+
+# Block public access as CloudFront will handle access via OAC
+resource "aws_s3_bucket_public_access_block" "frontend_bucket_pab" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Enable website hosting configuration (even though access is restricted to CloudFront)
+# CloudFront uses this to know the index document.
+resource "aws_s3_bucket_website_configuration" "frontend_website_config" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+
+  index_document {
+    suffix = "index.html"
+  }
+  error_document {
+    key = "index.html" # Redirect errors back to the single-page app
+  }
+}
+
+# Add a random suffix to bucket name for global uniqueness
+resource "random_id" "bucket_suffix" {
+  byte_length = 8
+}
+
+# --- CloudFront Distribution ---
+resource "aws_cloudfront_origin_access_control" "frontend_oac" {
+  name                              = "${local.project_name}-frontend-oac"
+  description                       = "OAC for frontend bucket"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+resource "aws_cloudfront_distribution" "frontend_distribution" {
+  enabled             = true
+  is_ipv6_enabled     = true
+  comment             = "${local.project_name} Frontend Distribution"
+  default_root_object = "index.html"
+
+  origin {
+    domain_name              = aws_s3_bucket.frontend_bucket.bucket_regional_domain_name
+    origin_id                = "S3-${aws_s3_bucket.frontend_bucket.id}"
+    origin_access_control_id = aws_cloudfront_origin_access_control.frontend_oac.id
+  }
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-${aws_s3_bucket.frontend_bucket.id}"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 3600 # Cache objects for 1 hour by default
+    max_ttl                = 86400 # Cache objects for 1 day maximum
+    compress               = true
+  }
+
+  # Redirect HTTP to HTTPS
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  # Handle single-page app routing for 403/404 errors
+  custom_error_response {
+    error_caching_min_ttl = 10
+    error_code            = 403
+    response_code         = 200
+    response_page_path    = "/index.html"
+  }
+   custom_error_response {
+    error_caching_min_ttl = 10
+    error_code            = 404
+    response_code         = 200
+    response_page_path    = "/index.html"
+  }
+
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none" # Allow access from anywhere
+    }
+  }
+
+  tags = local.common_tags
+}
+
+# --- S3 Bucket Policy to Allow CloudFront Access via OAC ---
+data "aws_iam_policy_document" "frontend_bucket_policy_doc" {
+  statement {
+    actions    = ["s3:GetObject"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+    resources = ["${aws_s3_bucket.frontend_bucket.arn}/*"] # Grant access to objects in the bucket
+
+    condition {
+       test     = "StringEquals"
+       variable = "AWS:SourceArn"
+       values   = [aws_cloudfront_distribution.frontend_distribution.arn]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "frontend_bucket_policy" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+  policy = data.aws_iam_policy_document.frontend_bucket_policy_doc.json
+}
+
+# --- Output the CloudFront Domain Name ---
+output "cloudfront_domain_name" {
+  description = "The domain name of the CloudFront distribution for the frontend"
+  value       = aws_cloudfront_distribution.frontend_distribution.domain_name
 }

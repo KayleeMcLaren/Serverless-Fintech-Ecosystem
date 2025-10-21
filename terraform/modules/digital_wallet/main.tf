@@ -347,7 +347,7 @@ resource "aws_api_gateway_integration_response" "credit_options_integration_resp
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
     "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'",
-    "method.response.header.Access-Control-Allow-Origin"  = "'http://localhost:5173'",
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'",
     "method.response.header.Access-Control-Allow-Credentials" = "'true'"
   }
 
@@ -427,7 +427,7 @@ resource "aws_api_gateway_integration_response" "debit_options_integration_respo
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
     "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'",
-    "method.response.header.Access-Control-Allow-Origin"  = "'http://localhost:5173'",
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'",
     "method.response.header.Access-Control-Allow-Credentials" = "'true'"
   }
 
