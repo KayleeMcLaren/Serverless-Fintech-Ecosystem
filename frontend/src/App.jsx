@@ -5,39 +5,39 @@ import MicroLoans from './MicroLoans';
 import PaymentSimulator from './PaymentSimulator';
 import DebtOptimiser from './DebtOptimiser';
 import {
-  WalletIcon,
-  BanknotesIcon, // Using this for Savings
-  CreditCardIcon, // Using this for Loans (or CurrencyDollarIcon)
-  ArrowsRightLeftIcon, // Using this for Payments/Transactions
-  ScaleIcon // Using this for Debt/Optimiser
-} from '@heroicons/react/24/outline'; // Use outline style
+  WalletIcon, BanknotesIcon, CreditCardIcon, ArrowsRightLeftIcon, ScaleIcon
+} from '@heroicons/react/24/outline';
+import TransactionHistory from './TransactionHistory'; // Make sure this is imported
 
-// --- PASTE YOUR API URL HERE ---
+// --- Constants ---
 const API_URL = 'https://3p79xdboij.execute-api.us-east-1.amazonaws.com/v1';
 const LOCAL_STORAGE_KEY = 'fintechWalletId';
 
 function App() {
   const [wallet, setWallet] = useState(null);
-  const [loading, setLoading] = useState(false); // General loading state
-  const [error, setError] = useState(null); // General error state
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [walletIdInput, setWalletIdInput] = useState('');
   const [amountInput, setAmountInput] = useState('');
-  const [activeTab, setActiveTab] = useState('wallet'); // Default to wallet tab
+  const [activeTab, setActiveTab] = useState('wallet');
+  const [transactionCount, setTransactionCount] = useState(0); // State to trigger history refresh
 
-  // --- Wallet Action Functions (Keep these as they are) ---
+  // --- Wallet Action Functions ---
+
   // Load wallet from localStorage on initial render
   useEffect(() => {
     const savedWalletId = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (savedWalletId) {
       console.log('Found saved wallet ID:', savedWalletId);
       setWalletIdInput(savedWalletId);
-      handleFetchWallet(savedWalletId); // Fetch wallet on load
+      handleFetchWallet(savedWalletId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Function to CREATE a new wallet
   const handleCreateWallet = async () => {
+    // ... (logic remains the same)
     setLoading(true);
     setError(null);
     setWallet(null);
@@ -48,6 +48,7 @@ function App() {
       setWallet(data.wallet);
       localStorage.setItem(LOCAL_STORAGE_KEY, data.wallet.wallet_id);
       setWalletIdInput(data.wallet.wallet_id);
+      setTransactionCount(prev => prev + 1); // Reset/trigger history on new wallet
       console.log('Wallet created and ID saved:', data.wallet.wallet_id);
     } catch (e) {
       setError(`Failed to create wallet: ${e.message}`);
@@ -56,66 +57,82 @@ function App() {
     }
   };
 
-  // Function to FETCH an existing wallet
+  // Function to FETCH an existing wallet (will also be used for refreshing)
   const handleFetchWallet = async (idToFetch) => {
     const walletId = idToFetch || walletIdInput;
     if (!walletId) {
-      setError('Please enter a Wallet ID to fetch.');
+      setError('Please enter a Wallet ID.'); // Simplified error
       return;
     }
-    setLoading(true);
+    // Only set loading if not already loading (avoids flicker on refresh)
+    if (!loading) setLoading(true);
     setError(null);
-    setWallet(null); // Clear previous wallet first
+    // Don't clear wallet immediately if just refreshing
+    // setWallet(null);
     try {
+      console.log(`Fetching wallet: ${walletId}`);
       const response = await fetch(`${API_URL}/wallet/${encodeURIComponent(walletId)}`);
       if (!response.ok) {
-        if (response.status === 404) throw new Error(`Wallet not found.`);
+        if (response.status === 404) throw new Error(`Wallet ${walletId} not found.`);
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
       const data = await response.json();
-      setWallet(data); // Fetched wallet data
-      localStorage.setItem(LOCAL_STORAGE_KEY, data.wallet_id);
-      setWalletIdInput(data.wallet_id);
-      console.log('Wallet fetched and ID saved:', data.wallet_id);
+      setWallet(data); // Update wallet data
+      // Only save/update input if explicitly fetching via input/load
+      if (idToFetch || !wallet) {
+          localStorage.setItem(LOCAL_STORAGE_KEY, data.wallet_id);
+          setWalletIdInput(data.wallet_id);
+      }
+      console.log('Wallet fetched:', data.wallet_id);
     } catch (e) {
       setError(`Failed to fetch wallet: ${e.message}`);
-      setWallet(null); // Ensure null on error
+      setWallet(null); // Clear wallet on fetch error
     } finally {
       setLoading(false);
     }
   };
 
+  // --- NEW: Function to refresh wallet balance AND trigger history refresh ---
+  const refreshWalletAndHistory = () => {
+      console.log("Refreshing wallet balance and transaction history...");
+      if (wallet?.wallet_id) {
+          handleFetchWallet(wallet.wallet_id); // Refetch wallet data
+          setTransactionCount(prev => prev + 1); // Increment count to change key
+      }
+  };
+
   // Function to handle Credit/Debit API calls
   const handleTransaction = async (type) => {
-    if (!wallet || !wallet.wallet_id) {
-      setError('No wallet loaded to perform transaction.');
-      return;
-    }
+    // ... (validation logic remains the same) ...
+    if (!wallet || !wallet.wallet_id) { /*...*/ return; }
     const amountStr = String(amountInput).trim();
-    if (!amountStr || parseFloat(amountStr) <= 0) {
-      setError('Please enter a positive amount.');
-      return;
-    }
+    if (!amountStr || parseFloat(amountStr) <= 0) { /*...*/ return; }
     const amount = parseFloat(amountStr);
+
     setLoading(true);
     setError(null);
     try {
       const response = await fetch(
-        `${API_URL}/wallet/${encodeURIComponent(wallet.wallet_id)}/${type}`,
-        {
+        `${API_URL}/wallet/${encodeURIComponent(wallet.wallet_id)}/${type}`, // <-- URL goes here
+        { // <-- Options object goes here
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ amount: amount.toFixed(2) }),
         }
       );
       const responseBody = await response.json();
-      if (!response.ok) {
-        const apiErrorMsg = responseBody?.message || response.statusText;
-        throw new Error(`HTTP error! Status: ${response.status} - ${apiErrorMsg}`);
-      }
-      setWallet((prevWallet) => ({ ...prevWallet, balance: responseBody.balance }));
+      if (!response.ok) { /* ... handle error ... */ throw new Error(/*...*/); }
+
+      // --- Update state and trigger refresh ---
+      // 1. Optimistically update balance (faster UI feedback)
+      // setWallet((prevWallet) => ({ ...prevWallet, balance: responseBody.balance }));
+      // 2. Clear input
       setAmountInput('');
-      console.log(`Transaction ${type} successful. New balance:`, responseBody.balance);
+      // 3. Trigger full refresh of wallet AND history
+      refreshWalletAndHistory();
+      console.log(`Transaction ${type} initiated refresh.`);
+      // --- End Update ---
+
     } catch (e) {
       setError(`Failed to ${type} wallet: ${e.message}`);
     } finally {
@@ -130,8 +147,8 @@ function App() {
     switch (activeTab) {
       case 'wallet':
         return (
-          // Use neutral background and border
           <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mb-8 shadow-sm">
+            {/* ... Keep Wallet Fetch/Create UI the same ... */}
             <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Digital Wallet</h2>
              {/* Input group for fetching wallet */}
             <div className="flex flex-wrap gap-3 mb-4 items-stretch">
@@ -141,13 +158,11 @@ function App() {
                 onChange={(e) => setWalletIdInput(e.target.value)}
                 placeholder="Enter Wallet ID"
                 disabled={loading}
-                // Use neutral border, focus ring with primary blue
                 className="flex-grow basis-60 p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 min-w-[150px]"
             />
             <button
                 onClick={() => handleFetchWallet()}
                 disabled={loading || !walletIdInput}
-                // Use primary blue button styles
                 className="px-4 py-2 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed flex-shrink-0"
             >
                 {loading && !wallet ? 'Fetching...' : 'Fetch Wallet'}
@@ -159,18 +174,18 @@ function App() {
             <button
                 onClick={handleCreateWallet}
                 disabled={loading}
-                 // Use primary blue button styles
                 className="px-4 py-2 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed"
             >
                  {loading && !wallet ? 'Creating...' : 'Create New Wallet'}
             </button>
             </div>
 
-            {/* Wallet Details and Transactions - Only if wallet exists */}
+
+            {/* Wallet Details, Transactions, and History - Only if wallet exists */}
             {wallet && (
-                 // Use lighter primary blue background with opacity, border with opacity
                  <div className="mt-6 p-4 bg-primary-blue-light/20 border border-primary-blue/30 rounded-md text-left">
-                    <h3 className="text-lg font-semibold text-primary-blue-dark mb-3">Wallet Details</h3>
+                    {/* ... Wallet Details Display ... */}
+                     <h3 className="text-lg font-semibold text-primary-blue-dark mb-3">Wallet Details</h3>
                     <p className="text-sm mb-1 break-words">
                         <strong className="text-neutral-600">Wallet ID:</strong>
                         <span className="ml-2 font-mono text-primary-blue-dark">{wallet.wallet_id}</span>
@@ -183,9 +198,11 @@ function App() {
                         <strong className="text-neutral-600">Currency:</strong>
                         <span className="ml-2 font-mono text-primary-blue-dark">{wallet.currency}</span>
                     </p>
+
                      {/* Transaction Section */}
-                    <div className="mt-5 pt-4 border-t border-primary-blue/30"> {/* Border with opacity */}
-                        <h4 className="text-md font-semibold text-neutral-700 mb-3">Make a Transaction</h4>
+                    <div className="mt-5 pt-4 border-t border-primary-blue/30">
+                        {/* ... Transaction Input and Buttons ... */}
+                         <h4 className="text-md font-semibold text-neutral-700 mb-3">Make a Transaction</h4>
                         <div className="mb-3">
                             <input
                             type="number"
@@ -194,7 +211,6 @@ function App() {
                             placeholder="Enter amount"
                             disabled={loading}
                             min="0.01" step="0.01"
-                            // Use neutral border, focus ring with primary blue
                             className="w-full p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50"
                             />
                         </div>
@@ -202,7 +218,6 @@ function App() {
                             <button
                                 onClick={() => handleTransaction('credit')}
                                 disabled={loading || !amountInput}
-                                // Use accent green button styles
                                 className="px-4 py-2 bg-accent-green text-white rounded-md hover:bg-accent-green-dark focus:outline-none focus:ring-2 focus:ring-accent-green focus:ring-offset-2 disabled:bg-accent-green-light disabled:cursor-not-allowed"
                             >
                                 Credit
@@ -210,23 +225,33 @@ function App() {
                             <button
                                 onClick={() => handleTransaction('debit')}
                                 disabled={loading || !amountInput}
-                                // Use accent red button styles
                                 className="px-4 py-2 bg-accent-red text-white rounded-md hover:bg-accent-red-dark focus:outline-none focus:ring-2 focus:ring-accent-red focus:ring-offset-2 disabled:bg-accent-red-light disabled:cursor-not-allowed"
                             >
                                 Debit
                             </button>
                         </div>
                     </div>
+
+                    {/* Transaction History - Pass key to force refresh */}
+                    <TransactionHistory
+                        key={transactionCount} // Add key here
+                        walletId={wallet.wallet_id}
+                        apiUrl={API_URL}
+                    />
                 </div>
             )}
-            {/* Display loading specific to wallet actions */}
-            {loading && activeTab === 'wallet' && <p className="text-center text-primary-blue mt-4">Processing Wallet Action...</p>}
-            {/* Error display moved outside this component, handled globally */}
+             {loading && activeTab === 'wallet' && <p className="text-center text-primary-blue mt-4">Processing Wallet Action...</p>}
           </div>
         );
 
+      // Pass refresh function down to SavingsGoals
       case 'savings':
-        return <SavingsGoals walletId={wallet ? wallet.wallet_id : null} apiUrl={API_URL} />;
+        return <SavingsGoals
+                  walletId={wallet ? wallet.wallet_id : null}
+                  apiUrl={API_URL}
+                  onGoalFunded={refreshWalletAndHistory} // Pass the refresh function
+                />;
+      // Other cases remain the same
       case 'loans':
         return <MicroLoans walletId={wallet ? wallet.wallet_id : null} apiUrl={API_URL} />;
       case 'payments':
@@ -238,17 +263,15 @@ function App() {
     }
   };
 
-  // --- Main JSX Structure ---
+  // --- Main JSX Structure (Keep the same) ---
   return (
-    // Use neutral text color from body (defined in index.css)
     <div className="max-w-3xl mx-auto my-8 p-8 bg-white rounded-lg shadow-md text-neutral-800">
       <header className="text-center mb-6">
-      <h1 className="text-3xl font-bold text-neutral-800">Serverless Fintech Ecosystem</h1>
+        <h1 className="text-3xl font-bold text-neutral-800">Serverless Fintech Ecosystem</h1>
       </header>
-
-      {/* Tab Navigation */}
+      {/* Tab Navigation (Keep the same) */}
       <nav className="flex justify-center border-b border-neutral-300 mb-8 space-x-1 sm:space-x-2">
-      {[
+       {[
         { id: 'wallet', label: 'Wallet', Icon: WalletIcon },
         { id: 'savings', label: 'Savings', Icon: BanknotesIcon },
         { id: 'loans', label: 'Loans', Icon: CreditCardIcon },
@@ -269,12 +292,10 @@ function App() {
         </button>
       ))}
       </nav>
-
       {/* Main Content Area */}
       <main>
-        {/* General Error Display - Use accent red */}
+        {/* General Error Display */}
         {error && <p className="mb-4 p-3 bg-accent-red-light border border-accent-red text-accent-red-dark rounded-md text-sm text-left">{error}</p>}
-
         {/* Render the content for the active tab */}
         {renderTabContent()}
       </main>

@@ -30,11 +30,26 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
 # --- IAM: DYNAMODB POLICY ---
 # This defines a custom policy that allows our Lambda functions
 # to read, write, and update items in our wallet table.
+
 data "aws_iam_policy_document" "dynamodb_wallet_table_policy_doc" {
+  # Statement 1: Existing permissions for wallet_table
   statement {
+    sid = "WalletTableAccess" # Added Sid for clarity
     actions   = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem"]
     resources = [var.dynamodb_table_arn]
   }
+  # Statement 2: NEW permissions for transaction_logs_table
+  statement {
+      sid = "TransactionLogAccess" # Renamed Sid for clarity
+      actions = [
+        "dynamodb:PutItem", # For logging transactions
+        "dynamodb:Query"    # ADDED: For reading transactions
+      ]
+      resources = [
+        var.transactions_log_table_arn,             # Access the table
+        "${var.transactions_log_table_arn}/index/*" # ADDED: Access the indexes
+      ]
+    }
 }
 
 resource "aws_iam_policy" "dynamodb_wallet_table_policy" {
@@ -89,6 +104,7 @@ resource "aws_lambda_function" "create_wallet_lambda" {
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
     }
   }
 }
@@ -111,6 +127,7 @@ resource "aws_lambda_function" "get_wallet_lambda" {
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
     }
   }
 }
@@ -133,6 +150,7 @@ resource "aws_lambda_function" "credit_wallet_lambda" {
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
     }
   }
 }
@@ -155,8 +173,110 @@ resource "aws_lambda_function" "debit_wallet_lambda" {
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
     }
   }
+}
+
+# --- LAMBDA: GET WALLET TRANSACTIONS ---
+data "archive_file" "get_wallet_transactions_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/get_wallet_transactions"
+  output_path = "${path.module}/get_wallet_transactions.zip"
+}
+
+resource "aws_lambda_function" "get_wallet_transactions_lambda" {
+  function_name    = "${var.project_name}-get-wallet-transactions"
+  role             = aws_iam_role.lambda_exec_role.arn # Reuses the same role
+  filename         = data.archive_file.get_wallet_transactions_zip.output_path
+  source_code_hash = data.archive_file.get_wallet_transactions_zip.output_base64sha256
+  handler          = "handler.get_wallet_transactions"
+  runtime          = "python3.12"
+  tags             = var.tags
+  environment {
+    variables = {
+      # Needs the log table name
+      TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
+    }
+  }
+}
+
+# --- API GATEWAY: GET /wallet/{wallet_id}/transactions ---
+resource "aws_api_gateway_resource" "transactions_resource" {
+  rest_api_id = var.api_gateway_id
+  parent_id   = aws_api_gateway_resource.wallet_id_resource.id # Attaches to /wallet/{wallet_id}
+  path_part   = "transactions"
+}
+
+resource "aws_api_gateway_method" "get_transactions_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.transactions_resource.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "get_transactions_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id             = aws_api_gateway_resource.transactions_resource.id
+  http_method             = aws_api_gateway_method.get_transactions_method.http_method
+  integration_http_method = "POST" # Still POST for Lambda proxy
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.get_wallet_transactions_lambda.invoke_arn
+}
+
+# --- API PERMISSION: GET TRANSACTIONS ---
+resource "aws_lambda_permission" "api_gateway_get_transactions_permission" {
+  statement_id  = "AllowAPIGatewayToInvokeGetTransactions"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.get_wallet_transactions_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${var.api_gateway_execution_arn}/*/*"
+}
+
+# --- API: OPTIONS /wallet/{wallet_id}/transactions (CORS Preflight for GET) ---
+# Although GETs don't always need preflight, it's good practice
+resource "aws_api_gateway_method" "get_transactions_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.transactions_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "get_transactions_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.transactions_resource.id
+  http_method             = aws_api_gateway_method.get_transactions_options_method.http_method
+  type                    = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "get_transactions_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.transactions_resource.id
+   http_method   = aws_api_gateway_method.get_transactions_options_method.http_method
+   status_code   = "200"
+   response_models = { "application/json" = "Empty" }
+   response_parameters = {
+     "method.response.header.Access-Control-Allow-Headers" = true,
+     "method.response.header.Access-Control-Allow-Methods" = true,
+     "method.response.header.Access-Control-Allow-Origin" = true,
+     "method.response.header.Access-Control-Allow-Credentials" = true
+   }
+}
+
+resource "aws_api_gateway_integration_response" "get_transactions_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.transactions_resource.id
+  http_method = aws_api_gateway_method.get_transactions_options_method.http_method
+  status_code = aws_api_gateway_method_response.get_transactions_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'",
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'",
+    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
+  }
+  response_templates = { "application/json" = "" }
+  depends_on = [aws_api_gateway_integration.get_transactions_options_integration]
 }
 
 ################################################################################

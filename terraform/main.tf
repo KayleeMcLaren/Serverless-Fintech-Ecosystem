@@ -105,6 +105,35 @@ resource "aws_dynamodb_table" "savings_goals_table" {
   tags = local.common_tags
 }
 
+# The DynamoDB table for transaction history logs
+resource "aws_dynamodb_table" "transactions_log_table" {
+  name         = "${local.project_name}-transaction-logs"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "transaction_id" # Unique ID for each log entry
+
+  attribute {
+    name = "transaction_id"
+    type = "S"
+  }
+  attribute {
+    name = "wallet_id" # We'll index this to query by wallet
+    type = "S"
+  }
+  attribute {
+    name = "timestamp" # Index this for sorting by time
+    type = "N" # Store as Unix timestamp (number)
+  }
+
+  # GSI to query transactions by wallet, sorted by time
+  global_secondary_index {
+    name            = "wallet_id-timestamp-index"
+    hash_key        = "wallet_id"
+    range_key       = "timestamp" # Sort key
+    projection_type = "ALL"
+  }
+
+  tags = local.common_tags
+}
 
 # The deployment for the API Gateway
 resource "aws_api_gateway_deployment" "api_deployment" {
@@ -158,6 +187,8 @@ module "digital_wallet" {
   dynamodb_table_arn           = aws_dynamodb_table.wallet_table.arn
   sns_topic_arn                = aws_sns_topic.loan_events.arn
   payment_sns_topic_arn        = aws_sns_topic.payment_events.arn
+  transactions_log_table_name = aws_dynamodb_table.transactions_log_table.name
+  transactions_log_table_arn  = aws_dynamodb_table.transactions_log_table.arn
 }
 
 module "micro_loan" {

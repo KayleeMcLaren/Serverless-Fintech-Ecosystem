@@ -1,58 +1,75 @@
 import React, { useState, useEffect } from 'react';
 
-// Keep formatCurrency helper
+// --- formatCurrency Helper ---
 const formatCurrency = (amount) => {
   try {
     const numberAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
     if (isNaN(numberAmount)) return String(amount);
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numberAmount);
   } catch (e) {
+    console.error("Error formatting currency:", amount, e);
     return String(amount);
   }
 };
+// --- End formatCurrency ---
 
-function SavingsGoals({ walletId, apiUrl }) {
+function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
   const [goals, setGoals] = useState([]);
-  const [loading, setLoading] = useState(false); // General loading for fetch/create/delete
-  const [addFundsLoading, setAddFundsLoading] = useState(null); // Track loading state per goal ID
+  const [loading, setLoading] = useState(false);
+  const [addFundsLoading, setAddFundsLoading] = useState(null);
   const [error, setError] = useState(null);
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalTarget, setNewGoalTarget] = useState('');
-  const [addAmount, setAddAmount] = useState({}); // State to hold amount input for each goal { goalId: amount }
+  const [addAmount, setAddAmount] = useState({});
 
-  // --- Keep useEffect, fetchGoals, handleCreateGoal, handleDeleteGoal ---
+  // --- Fetch goals when walletId changes ---
   useEffect(() => {
+    // Check if walletId is present before fetching
     if (walletId) {
+      console.log("SavingsGoals: walletId received, fetching goals.", walletId);
       fetchGoals();
     } else {
-      setGoals([]);
+       console.log("SavingsGoals: No walletId, clearing goals.");
+      setGoals([]); // Clear goals if no wallet ID is provided
     }
-     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Dependency array ensures this runs when walletId changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walletId]);
 
+  // --- Fetch Goals Function ---
   const fetchGoals = async () => {
-    // ... (keep fetchGoals function the same)
-    if (!walletId) return;
+    if (!walletId) {
+        console.log("fetchGoals: Aborted, no walletId.");
+        return;
+    }
+    console.log(`fetchGoals: Fetching for wallet ${walletId}...`);
     setLoading(true);
     setError(null);
     try {
       const response = await fetch(`${apiUrl}/savings-goal/by-wallet/${encodeURIComponent(walletId)}`);
+      console.log(`fetchGoals: Response status ${response.status}`);
       if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
+        let errorMsg = `HTTP error! Status: ${response.status}`;
+         try { const errBody = await response.json(); errorMsg = errBody.message || errorMsg; } catch(e){}
+        throw new Error(errorMsg);
       }
       const data = await response.json();
-      setGoals(data);
+      console.log("fetchGoals: Received data:", data);
+      // Ensure data is an array before setting
+      setGoals(Array.isArray(data) ? data : []);
     } catch (e) {
+      console.error("fetchGoals: Error caught:", e);
       setError(`Failed to fetch savings goals: ${e.message}`);
-      setGoals([]);
+      setGoals([]); // Clear goals on error
     } finally {
       setLoading(false);
+      console.log("fetchGoals: Fetch complete.");
     }
   };
 
+  // --- Create Goal Function ---
   const handleCreateGoal = async (e) => {
-    // ... (keep handleCreateGoal function the same)
-     e.preventDefault();
+    e.preventDefault();
     if (!walletId || !newGoalName || !newGoalTarget || parseFloat(newGoalTarget) <= 0) {
       setError('Please provide a goal name and a positive target amount.');
       return;
@@ -75,7 +92,7 @@ function SavingsGoals({ walletId, apiUrl }) {
       }
       setNewGoalName('');
       setNewGoalTarget('');
-      fetchGoals();
+      fetchGoals(); // Refetch goals after creating
     } catch (e) {
       setError(`Failed to create goal: ${e.message}`);
     } finally {
@@ -83,12 +100,12 @@ function SavingsGoals({ walletId, apiUrl }) {
     }
   };
 
-   const handleDeleteGoal = async (goalId) => {
-     // ... (keep handleDeleteGoal function the same)
+  // --- Delete Goal Function ---
+  const handleDeleteGoal = async (goalId) => {
      if (!window.confirm('Are you sure you want to delete this savings goal?')) {
       return;
     }
-    setLoading(true); // Use general loading here, or specific if preferred
+    setLoading(true); // Can use general loading or a specific one
     setError(null);
     try {
       const response = await fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}`, {
@@ -98,7 +115,7 @@ function SavingsGoals({ walletId, apiUrl }) {
       if (!response.ok) {
         throw new Error(responseBody?.message || `HTTP error! Status: ${response.status}`);
       }
-      fetchGoals();
+      fetchGoals(); // Refetch goals after deleting
     } catch (e) {
       setError(`Failed to delete goal: ${e.message}`);
     } finally {
@@ -106,7 +123,7 @@ function SavingsGoals({ walletId, apiUrl }) {
     }
   };
 
-  // --- NEW: Add Funds to Goal Function ---
+  // --- Add Funds to Goal Function ---
   const handleAddToGoal = async (goalId) => {
     const amountToAddStr = String(addAmount[goalId] || '').trim();
     if (!amountToAddStr || parseFloat(amountToAddStr) <= 0) {
@@ -115,14 +132,14 @@ function SavingsGoals({ walletId, apiUrl }) {
     }
     const amount = parseFloat(amountToAddStr).toFixed(2);
 
-    setAddFundsLoading(goalId); // Set loading state specifically for this goal
+    setAddFundsLoading(goalId);
     setError(null);
     try {
       const response = await fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}/add`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          wallet_id: walletId, // Pass the main wallet ID
+          wallet_id: walletId,
           amount: amount,
         }),
       });
@@ -130,17 +147,17 @@ function SavingsGoals({ walletId, apiUrl }) {
       if (!response.ok) {
         throw new Error(responseBody?.message || `HTTP error! Status: ${response.status}`);
       }
-      // Clear the input for this specific goal
       setAddAmount(prev => ({ ...prev, [goalId]: '' }));
-      // Refetch goals to update the current amount and progress bar
-      // Also refetch the main wallet balance (requires passing a function down or lifting state - TBD)
-      fetchGoals();
-      // TODO: Add a way to trigger wallet balance refetch in App.jsx
-      console.log(`Successfully added funds to goal ${goalId}`);
+      fetchGoals(); // Refetch goals
+
+      if (onGoalFunded) {
+          onGoalFunded(); // Trigger wallet balance refresh in parent
+      }
+      console.log(`Successfully added funds to goal ${goalId}, triggered parent refresh.`);
     } catch (e) {
       setError(`Failed to add funds to goal ${goalId}: ${e.message}`);
     } finally {
-      setAddFundsLoading(null); // Clear loading state for this goal
+      setAddFundsLoading(null);
     }
   };
 
@@ -158,6 +175,7 @@ function SavingsGoals({ walletId, apiUrl }) {
     );
   }
 
+  // --- Keep the rest of the return(...) JSX the same ---
   return (
     <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mt-8 shadow-sm">
       <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Savings Goals</h2>
@@ -178,7 +196,7 @@ function SavingsGoals({ walletId, apiUrl }) {
             const current = parseFloat(goal.current_amount || '0');
             const target = parseFloat(goal.target_amount);
             const percentage = target > 0 ? Math.min((current / target) * 100, 100) : 0;
-            const isLoadingThisGoal = addFundsLoading === goal.goal_id; // Check if this goal is currently processing 'add funds'
+            const isLoadingThisGoal = addFundsLoading === goal.goal_id;
 
             return (
               <li key={goal.goal_id} className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
@@ -193,16 +211,16 @@ function SavingsGoals({ walletId, apiUrl }) {
                   </div>
                    <button
                      onClick={() => handleDeleteGoal(goal.goal_id)}
-                     disabled={loading || isLoadingThisGoal} // Disable if any loading is happening
+                     disabled={loading || isLoadingThisGoal}
                      className="px-2 py-1 bg-accent-red text-white text-xs rounded hover:bg-accent-red-dark disabled:bg-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-500 flex-shrink-0"
                    >
                      Delete
                    </button>
                 </div>
                 {/* Progress Bar */}
-                <div className="w-full bg-neutral-200 rounded-full h-2.5 dark:bg-neutral-700 mt-1 mb-3"> {/* Added margin-bottom */}
+                <div className="w-full bg-neutral-200 rounded-full h-2.5 dark:bg-neutral-700 mt-1 mb-3">
                   <div
-                    className="bg-primary-blue h-2.5 rounded-full transition-all duration-300 ease-out" // Added transition
+                    className="bg-primary-blue h-2.5 rounded-full transition-all duration-300 ease-out"
                     style={{ width: `${percentage}%` }}
                   ></div>
                 </div>
@@ -227,7 +245,6 @@ function SavingsGoals({ walletId, apiUrl }) {
                         {isLoadingThisGoal ? 'Adding...' : 'Add Funds'}
                     </button>
                 </div>
-                {/* --- End Add Funds --- */}
               </li>
             );
           })}
@@ -236,7 +253,6 @@ function SavingsGoals({ walletId, apiUrl }) {
 
       {/* --- Form to Create New Goal --- */}
       <form onSubmit={handleCreateGoal} className="mt-6 pt-4 border-t border-neutral-200">
-        {/* ... (keep create goal form the same) ... */}
          <h4 className="text-md font-semibold text-neutral-700 mb-3">Add New Goal</h4>
         <div className="flex flex-wrap gap-3 mb-3 items-stretch">
           <input
