@@ -27,22 +27,31 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
 data "aws_iam_policy_document" "dynamodb_savings_table_policy_doc" {
   # Statement 1: Permissions for the savings_goals_table
   statement {
+    sid = "SavingsTableAccess" # Add Sid
     actions = [
       "dynamodb:PutItem",
       "dynamodb:Query",
       "dynamodb:DeleteItem",
-      "dynamodb:UpdateItem" # Add UpdateItem
+      "dynamodb:UpdateItem"
     ]
     resources = [
       var.dynamodb_table_arn,
       "${var.dynamodb_table_arn}/index/*"
     ]
   }
-  # Statement 2: Permissions for the wallets_table
+  # Statement 2: Permissions for the wallets_table (for transactions)
   statement {
-    actions   = ["dynamodb:UpdateItem"] # Only needs UpdateItem
+    sid = "WalletsTableTxAccess" # Add Sid
+    actions   = ["dynamodb:UpdateItem"]
     resources = [var.wallets_table_arn]
   }
+  # Statement 3: Permissions for writing to the transaction log table
+  statement {
+    sid = "TransactionLogWriteAccess"
+    actions   = ["dynamodb:PutItem"] # Permission to log
+    resources = [var.transactions_log_table_arn] # On the log table
+  }
+
 }
 
 resource "aws_iam_policy" "dynamodb_savings_table_policy" {
@@ -145,6 +154,7 @@ resource "aws_lambda_function" "add_to_savings_goal_lambda" {
     variables = {
       SAVINGS_TABLE_NAME = var.dynamodb_table_name
       WALLETS_TABLE_NAME = var.wallets_table_name
+      TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
     }
   }
 }

@@ -229,6 +229,8 @@ module "savings_goal" {
   dynamodb_table_arn           = aws_dynamodb_table.savings_goals_table.arn
   wallets_table_name           = module.digital_wallet.wallet_table_name
   wallets_table_arn            = module.digital_wallet.wallet_table_arn
+  transactions_log_table_name = aws_dynamodb_table.transactions_log_table.name
+  transactions_log_table_arn  = aws_dynamodb_table.transactions_log_table.arn
 }
 
 module "debt_optimiser" {
