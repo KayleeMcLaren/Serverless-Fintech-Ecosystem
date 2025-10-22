@@ -30,5 +30,13 @@ output "api_gateway_config_hash" {
     aws_api_gateway_method.add_to_goal_options_method,
     aws_api_gateway_integration.add_to_goal_options_integration,
     aws_api_gateway_method_response.add_to_goal_options_200,
+
+    # GET /savings-goal/{goal_id}/transactions
+    aws_api_gateway_resource.goal_transactions_resource,        # ADD
+    aws_api_gateway_method.get_goal_transactions_method,        # ADD
+    aws_api_gateway_integration.get_goal_transactions_integration, # ADD
+    aws_api_gateway_method.get_goal_transactions_options_method, # ADD
+    aws_api_gateway_integration.get_goal_transactions_options_integration, # ADD
+    aws_api_gateway_method_response.get_goal_transactions_options_200,   # ADD
   ]))
 }

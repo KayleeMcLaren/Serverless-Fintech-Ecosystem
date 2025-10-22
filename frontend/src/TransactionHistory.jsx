@@ -80,12 +80,19 @@ function TransactionHistory({ walletId, apiUrl }) {
 
   // Function to get a user-friendly description
   const getDescription = (tx) => {
+    // Get potential names from details, provide fallbacks
+    const merchantName = tx.details?.merchant || 'Merchant';
+    const goalName = tx.details?.goal_name || 'Savings Goal'; // Look for goal_name
+
     switch (tx.type) {
         case 'CREDIT': return 'Deposit';
         case 'DEBIT': return 'Withdrawal';
         case 'LOAN_IN': return `Loan Funded (${(tx.related_id || 'N/A').substring(0, 8)}...)`;
-        case 'PAYMENT_OUT': return `Payment to ${tx.details?.merchant || 'Merchant'} (${(tx.related_id || 'N/A').substring(0, 8)}...)`;
-        default: return tx.type || 'Transaction';
+        // Use merchantName from details
+        case 'PAYMENT_OUT': return `Payment to ${merchantName}`;
+        // Use goalName from details
+        case 'SAVINGS_ADD': return `Added to ${goalName}`;
+        default: return tx.type || 'Transaction'; // Fallback
     }
   };
 
@@ -105,14 +112,17 @@ function TransactionHistory({ walletId, apiUrl }) {
       {!loading && transactions.length > 0 && (
         <ul className="space-y-2 max-h-60 overflow-y-auto pr-2"> {/* Limit height and add scroll */}
           {transactions.map((tx) => {
-            // Recalculate these inside the map for each transaction
-            const isCredit = tx.type === 'CREDIT' || tx.type === 'LOAN_IN';
+            // ... (keep existing amountColor, amountSign calculation) ...
+            const isCredit = tx.type === 'CREDIT' || tx.type === 'LOAN_IN' || tx.type === 'SAVINGS_ADD'; // Include SAVINGS_ADD as credit type display
             const amountColor = isCredit ? 'text-accent-green-dark' : 'text-accent-red-dark';
             const amountSign = isCredit ? '+' : '-';
-            // Check if balance_after exists, is not 'N/A', and try formatting
+
+            // Check balance type and format
+            const balance_is_goal = tx.details?.balance_is_goal === true
+            const balanceLabel = balance_is_goal ? 'Goal Bal:' : 'Bal:'; // Choose label
             const balanceAfter = (tx.balance_after !== 'N/A' && tx.balance_after !== undefined)
                 ? formatCurrency(tx.balance_after)
-                : 'N/A'; // Show N/A if missing or explicitly N/A
+                : 'N/A';
 
             return (
               <li key={tx.transaction_id} className="p-2 bg-neutral-100 border border-neutral-200 rounded text-xs">
@@ -121,13 +131,14 @@ function TransactionHistory({ walletId, apiUrl }) {
                   <span className="block font-medium text-neutral-700">{getDescription(tx)}</span>
                   <span className={`font-semibold ${amountColor}`}>
                     {amountSign}
-                    {formatCurrency(tx.amount)} {/* Display Amount */}
+                    {formatCurrency(tx.amount)}
                   </span>
                 </div>
-                {/* Bottom Row: Date and Balance After - THIS WAS MISSING */}
+                {/* Bottom Row: Date and Appropriate Balance */}
                 <div className="flex justify-between items-center text-neutral-500">
                    <span>{formatTimestamp(tx.timestamp)}</span>
-                   <span>Bal: {balanceAfter}</span> {/* Display Balance After */}
+                   {/* Display correct label and balance */}
+                   <span>{balanceLabel} {balanceAfter}</span>
                 </div>
               </li>
             );

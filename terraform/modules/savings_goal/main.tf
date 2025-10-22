@@ -1,3 +1,12 @@
+locals {
+  cors_headers = {
+    "Access-Control-Allow-Headers" = "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Methods" = "OPTIONS,GET,POST,DELETE", # List allowed methods generally
+    "Access-Control-Allow-Origin"  = "*", # Use variable or specific origin for prod
+    "Access-Control-Allow-Credentials" = "true"
+  }
+}
+
 # --- IAM ---
 # This section defines all permissions for our Lambda functions.
 
@@ -32,7 +41,8 @@ data "aws_iam_policy_document" "dynamodb_savings_table_policy_doc" {
       "dynamodb:PutItem",
       "dynamodb:Query",
       "dynamodb:DeleteItem",
-      "dynamodb:UpdateItem"
+      "dynamodb:UpdateItem",
+      "dynamodb:GetItem"
     ]
     resources = [
       var.dynamodb_table_arn,
@@ -50,6 +60,14 @@ data "aws_iam_policy_document" "dynamodb_savings_table_policy_doc" {
     sid = "TransactionLogWriteAccess"
     actions   = ["dynamodb:PutItem"] # Permission to log
     resources = [var.transactions_log_table_arn] # On the log table
+  }
+  # Statement 4: Permissions for reading the transaction log table GSI
+  statement {
+      sid = "TransactionLogReadGoalIndex"
+      actions = ["dynamodb:Query"] # Permission to query GSI
+      resources = [
+          "${var.transactions_log_table_arn}/index/related_id-timestamp-index" # Specific index ARN
+      ]
   }
 
 }
@@ -154,6 +172,28 @@ resource "aws_lambda_function" "add_to_savings_goal_lambda" {
     variables = {
       SAVINGS_TABLE_NAME = var.dynamodb_table_name
       WALLETS_TABLE_NAME = var.wallets_table_name
+      TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
+    }
+  }
+}
+
+# --- LAMBDA: GET GOAL TRANSACTIONS ---
+data "archive_file" "get_goal_transactions_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/get_goal_transactions"
+  output_path = "${path.module}/get_goal_transactions.zip"
+}
+
+resource "aws_lambda_function" "get_goal_transactions_lambda" {
+  function_name    = "${var.project_name}-get-goal-transactions"
+  role             = aws_iam_role.lambda_exec_role.arn # Reuses same role
+  filename         = data.archive_file.get_goal_transactions_zip.output_path
+  source_code_hash = data.archive_file.get_goal_transactions_zip.output_base64sha256
+  handler          = "handler.get_goal_transactions"
+  runtime          = "python3.12"
+  tags             = var.tags
+  environment {
+    variables = {
       TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
     }
   }
@@ -425,6 +465,29 @@ resource "aws_api_gateway_integration_response" "add_to_goal_options_integration
   depends_on = [aws_api_gateway_integration.add_to_goal_options_integration]
 }
 
+# --- API GATEWAY: GET /savings-goal/{goal_id}/transactions ---
+resource "aws_api_gateway_resource" "goal_transactions_resource" {
+  rest_api_id = var.api_gateway_id
+  parent_id   = aws_api_gateway_resource.savings_goal_id_resource.id # Attaches to /savings-goal/{goal_id}
+  path_part   = "transactions"
+}
+
+resource "aws_api_gateway_method" "get_goal_transactions_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.goal_transactions_resource.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "get_goal_transactions_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id             = aws_api_gateway_resource.goal_transactions_resource.id
+  http_method             = aws_api_gateway_method.get_goal_transactions_method.http_method
+  integration_http_method = "POST" # Lambda proxy
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.get_goal_transactions_lambda.invoke_arn
+}
+
 ################################################################################
 # --- LAMBDA PERMISSIONS ---
 # This section grants API Gateway permission to invoke our Lambda functions.
@@ -464,4 +527,48 @@ resource "aws_lambda_permission" "api_gateway_add_to_goal_permission" {
   function_name = aws_lambda_function.add_to_savings_goal_lambda.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${var.api_gateway_execution_arn}/*/*"
+}
+
+# --- API PERMISSION: GET GOAL TRANSACTIONS ---
+resource "aws_lambda_permission" "api_gateway_get_goal_transactions_permission" {
+  statement_id  = "AllowAPIGatewayToInvokeGetGoalTx"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.get_goal_transactions_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${var.api_gateway_execution_arn}/*/*"
+}
+
+# --- API: OPTIONS /savings-goal/{goal_id}/transactions (CORS Preflight for GET) ---
+resource "aws_api_gateway_method" "get_goal_transactions_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.goal_transactions_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "get_goal_transactions_options_integration" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.goal_transactions_resource.id
+  http_method   = aws_api_gateway_method.get_goal_transactions_options_method.http_method
+  type          = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "get_goal_transactions_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.goal_transactions_resource.id
+   http_method   = aws_api_gateway_method.get_goal_transactions_options_method.http_method
+   status_code   = "200"
+   response_models = { "application/json" = "Empty" }
+   response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => true }
+}
+
+resource "aws_api_gateway_integration_response" "get_goal_transactions_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.goal_transactions_resource.id
+  http_method = aws_api_gateway_method.get_goal_transactions_options_method.http_method
+  status_code = aws_api_gateway_method_response.get_goal_transactions_options_200.status_code
+  response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => "'${v}'" }
+  response_templates = { "application/json" = "" }
+  depends_on = [aws_api_gateway_integration.get_goal_transactions_options_integration]
 }

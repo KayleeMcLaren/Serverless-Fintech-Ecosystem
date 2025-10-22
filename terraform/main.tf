@@ -123,6 +123,10 @@ resource "aws_dynamodb_table" "transactions_log_table" {
     name = "timestamp" # Index this for sorting by time
     type = "N" # Store as Unix timestamp (number)
   }
+  attribute { 
+    name = "related_id" 
+    type = "S" 
+    }
 
   # GSI to query transactions by wallet, sorted by time
   global_secondary_index {
@@ -130,6 +134,13 @@ resource "aws_dynamodb_table" "transactions_log_table" {
     hash_key        = "wallet_id"
     range_key       = "timestamp" # Sort key
     projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "related_id-timestamp-index" # New index name
+    hash_key        = "related_id"                 # Query by goal_id (stored in related_id)
+    range_key       = "timestamp"                  # Sort by time
+    projection_type = "ALL"                        # Get all transaction data
   }
 
   tags = local.common_tags

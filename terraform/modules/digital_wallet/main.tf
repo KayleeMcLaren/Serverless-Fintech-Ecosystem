@@ -342,6 +342,7 @@ resource "aws_lambda_function" "process_payment_request_lambda" {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
       SNS_TOPIC_ARN       = var.payment_sns_topic_arn # The payment topic
+      TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
     }
   }
 }

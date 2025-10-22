@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import GoalTransactionHistory from './GoalTransactionHistory';
 
 // --- formatCurrency Helper ---
 const formatCurrency = (amount) => {
@@ -245,6 +246,7 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
                         {isLoadingThisGoal ? 'Adding...' : 'Add Funds'}
                     </button>
                 </div>
+                <GoalTransactionHistory goalId={goal.goal_id} apiUrl={apiUrl} />
               </li>
             );
           })}
