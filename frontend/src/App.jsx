@@ -1,196 +1,57 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
-// Import the components
+// Import Components
 import SavingsGoals from './SavingsGoals';
 import MicroLoans from './MicroLoans';
 import PaymentSimulator from './PaymentSimulator';
 import DebtOptimiser from './DebtOptimiser';
-import {
-  WalletIcon,
-  BanknotesIcon,
-  CreditCardIcon,
-  ArrowsRightLeftIcon,
-  ScaleIcon
-} from '@heroicons/react/24/outline';
 import TransactionHistory from './TransactionHistory';
-
-// --- PASTE YOUR API URL HERE ---
-const API_URL = 'https://3p79xdboij.execute-api.us-east-1.amazonaws.com/v1';
-const LOCAL_STORAGE_KEY = 'fintechWalletId';
-
-// --- formatCurrency Helper ---
-const formatCurrency = (amount) => {
-    try {
-      const numberAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-      if (isNaN(numberAmount)) return String(amount);
-      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numberAmount);
-    } catch (e) {
-      console.error("Error formatting currency:", amount, e);
-      return String(amount); // Fallback
-    }
-};
-// --- End formatCurrency ---
+import Spinner from './Spinner'; // Import Spinner
+// Import Icons
+import {
+  WalletIcon, BanknotesIcon, CreditCardIcon, ArrowsRightLeftIcon, ScaleIcon
+} from '@heroicons/react/24/outline';
+// Import the new context hook
+import { useWallet, formatCurrency } from './contexts/WalletContext';
 
 function App() {
-  const [wallet, setWallet] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [walletIdInput, setWalletIdInput] = useState('');
-  const [amountInput, setAmountInput] = useState('');
   const [activeTab, setActiveTab] = useState('wallet');
-  const [transactionCount, setTransactionCount] = useState(0);
+  const [error, setError] = useState(null); // Keep for general tab errors
 
-  // Load wallet from localStorage on initial render
-  useEffect(() => {
-    const savedWalletId = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (savedWalletId) {
-      console.log('Found saved wallet ID:', savedWalletId);
-      setWalletIdInput(savedWalletId);
-      handleFetchWallet(savedWalletId, true); // Pass true to indicate initial load
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // --- Get ALL wallet state and functions from the context ---
+  const {
+    wallet,
+    walletIdInput,
+    setWalletIdInput,
+    amountInput,
+    setAmountInput,
+    loading,
+    transactionCount,
+    handleCreateWallet,
+    handleFetchWallet, // The silent fetch
+    handleTransaction,
+    refreshWalletAndHistory,
+    apiUrl,
+  } = useWallet();
+  // --- End Get State ---
 
-  // --- Function to CREATE a new wallet (with toast) ---
-  const handleCreateWallet = async () => {
-    setLoading(true);
-    setError(null);
-    setWallet(null);
-    await toast.promise(
-      fetch(`${API_URL}/wallet`, { method: 'POST' })
-        .then(async (response) => {
-          if (!response.ok) {
-            let errorMsg = `HTTP error! Status: ${response.status}`;
-            try { const errData = await response.json(); errorMsg = errData.message || errorMsg; } catch (e) {}
-            throw new Error(errorMsg);
-          }
-          return response.json();
-        })
-        .then((data) => {
-          setWallet(data.wallet);
-          localStorage.setItem(LOCAL_STORAGE_KEY, data.wallet.wallet_id);
-          setWalletIdInput(data.wallet.wallet_id);
-          setTransactionCount(prev => prev + 1);
-          console.log('Wallet created and ID saved:', data.wallet.wallet_id);
-        }),
-      {
-        loading: 'Creating wallet...',
-        success: <b>Wallet created!</b>,
-        error: (err) => <b>Failed to create wallet: {err.message}</b>,
-      }
-    );
-    setLoading(false);
-  };
-
-  // --- Function to FETCH an existing wallet (SILENT - NO TOAST) ---
-  const handleFetchWallet = async (idToFetch, isInitialLoad = false) => {
-    const walletId = idToFetch || walletIdInput;
-    if (!walletId) {
-      toast.error('Please enter a Wallet ID.'); // Still toast for validation
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    if (!isInitialLoad) {
-        setWallet(null);
-    }
-    
-    try {
-        console.log(`Fetching wallet: ${walletId}`);
-        const response = await fetch(`${API_URL}/wallet/${encodeURIComponent(walletId)}`);
-        if (!response.ok) {
-           let errorMsg = `HTTP error! Status: ${response.status}`;
-           if (response.status === 404) errorMsg = `Wallet ${walletId} not found.`;
-           else { try { const errData = await response.json(); errorMsg = errData.message || errorMsg; } catch(e){} }
-           throw new Error(errorMsg);
-        }
-        const data = await response.json();
-        setWallet(data);
-        if (idToFetch || !wallet) {
-           localStorage.setItem(LOCAL_STORAGE_KEY, data.wallet_id);
-           setWalletIdInput(data.wallet_id);
-        }
-        console.log('Wallet fetched:', data.wallet_id);
-        setTransactionCount(prev => prev + 1); // Refresh history on fetch
-        return data; // Return data for the toast promise (if wrapped)
-    } catch (e) {
-        setError(`Failed to fetch wallet: ${e.message}`); // Set inline error
-        setWallet(null);
-        throw e; // Re-throw for the toast promise to catch
-    } finally {
-        setLoading(false);
-    }
-  };
-
-  // --- Function to refresh wallet balance AND trigger history refresh ---
-  const refreshWalletAndHistory = () => {
-      console.log("Refreshing wallet balance and transaction history...");
-      if (wallet?.wallet_id) {
-          // Call the silent fetch function
-          handleFetchWallet(wallet.wallet_id, true);
-          setTransactionCount(prev => prev + 1);
-      }
-  };
-
-  // --- Function to handle Credit/Debit API calls (with toast) ---
-  const handleTransaction = async (type) => {
-    if (!wallet || !wallet.wallet_id) {
-      toast.error('No wallet loaded.'); return;
-    }
-    const amountStr = String(amountInput).trim();
-    if (!amountStr || parseFloat(amountStr) <= 0) {
-      toast.error('Please enter a positive amount.'); return;
-    }
-    const amount = parseFloat(amountStr);
-    setLoading(true);
-    setError(null);
-
-    await toast.promise(
-       fetch(
-        `${API_URL}/wallet/${encodeURIComponent(wallet.wallet_id)}/${type}`,
-        { // Ensure method and body are here
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: amount.toFixed(2) }),
-        }
-      )
-      .then(async (response) => {
-         const responseBody = await response.json();
-         if (!response.ok) {
-            const apiErrorMsg = responseBody?.message || `HTTP error! Status: ${response.status}`;
-            throw new Error(apiErrorMsg);
-         }
-         return responseBody;
-      }),
-    {
-      loading: `${type === 'credit' ? 'Depositing' : 'Withdrawing'}...`,
-      success: (responseBody) => {
-         // Move logic inside success handler
-         setWallet((prevWallet) => ({ ...prevWallet, balance: responseBody.balance }));
-         setAmountInput('');
-         refreshWalletAndHistory(); // Trigger refresh
-         return <b>Transaction successful! New balance: {formatCurrency(responseBody.balance)}</b>;
-      },
-      error: (err) => <b>{`Failed to ${type}: ${err.message}`}</b>,
-    }
-  );
-  setLoading(false);
-  };
-  // --- End Wallet Action Functions ---
 
   // --- Wrapper for Fetch Wallet Button Click ---
   const onFetchClick = () => {
     // Wrap the silent handleFetchWallet in a toast.promise
     toast.promise(
-        handleFetchWallet(walletIdInput), // Call the silent function
+        handleFetchWallet(walletIdInput), // Call the function from context
         {
             loading: 'Fetching wallet...',
             success: (data) => <b>Wallet {data.wallet_id.substring(0,8)}... loaded!</b>,
-            error: (err) => <b>{err.message}</b>, // Error is already set inline
+            error: (err) => {
+                setError(err.message); // Set error for display
+                return <b>{err.message}</b>; // Return error for toast
+            }
         }
-    );
+    ).catch(() => {}); // Catch the re-thrown error so it doesn't log to console
   };
-
+  
   // --- Function to render content based on active tab ---
   const renderTabContent = () => {
     switch (activeTab) {
@@ -198,6 +59,7 @@ function App() {
         return (
           <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mb-8 shadow-sm">
             <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Digital Wallet</h2>
+             {/* Input group for fetching wallet */}
             <div className="flex flex-wrap gap-3 mb-4 items-stretch">
             <input
                 type="text"
@@ -207,9 +69,8 @@ function App() {
                 disabled={loading}
                 className="flex-grow basis-60 p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 min-w-[150px]"
             />
-            {/* --- UPDATE onClick HANDLER --- */}
             <button
-                onClick={onFetchClick} // Use the new wrapper function
+                onClick={onFetchClick} // Use the toast-wrapper
                 disabled={loading || !walletIdInput}
                 className="px-4 py-2 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed flex-shrink-0"
             >
@@ -217,6 +78,7 @@ function App() {
             </button>
             </div>
              <p className="text-center text-neutral-500 my-4">Or</p>
+             {/* Create Button */}
             <div className="text-center">
             <button
                 onClick={handleCreateWallet}
@@ -227,6 +89,7 @@ function App() {
             </button>
             </div>
 
+            {/* Wallet Details and Transactions - Only if wallet exists */}
             {wallet && (
                  <div className="mt-6 p-4 bg-primary-blue-light/20 border border-primary-blue/30 rounded-md text-left">
                     <h3 className="text-lg font-semibold text-primary-blue-dark mb-3">Wallet Details</h3>
@@ -242,6 +105,7 @@ function App() {
                         <strong className="text-neutral-600">Currency:</strong>
                         <span className="ml-2 font-mono text-primary-blue-dark">{wallet.currency}</span>
                     </p>
+                     {/* Transaction Section */}
                     <div className="mt-5 pt-4 border-t border-primary-blue/30">
                         <h4 className="text-md font-semibold text-neutral-700 mb-3">Make a Transaction</h4>
                         <div className="mb-3">
@@ -272,28 +136,42 @@ function App() {
                             </button>
                         </div>
                     </div>
+                    {/* Transaction History - Pass key from context */}
                     <TransactionHistory
                         key={transactionCount}
                         walletId={wallet.wallet_id}
-                        apiUrl={API_URL}
+                        apiUrl={apiUrl}
                     />
                 </div>
             )}
-            {loading && activeTab === 'wallet' && <p className="text-center text-primary-blue mt-4">Processing Wallet Action...</p>}
+            {/* Show loading spinner if wallet is loading */}
+            {loading && !wallet && <Spinner />}
           </div>
         );
+
       case 'savings':
         return <SavingsGoals
                   walletId={wallet ? wallet.wallet_id : null}
-                  apiUrl={API_URL}
-                  onGoalFunded={refreshWalletAndHistory}
+                  apiUrl={apiUrl}
+                  onGoalFunded={refreshWalletAndHistory} // Pass refresh function
                 />;
       case 'loans':
-        return <MicroLoans walletId={wallet ? wallet.wallet_id : null} apiUrl={API_URL} />;
+        return <MicroLoans
+                  walletId={wallet ? wallet.wallet_id : null}
+                  apiUrl={apiUrl}
+                  onLoanRepayment={refreshWalletAndHistory} // Pass refresh function
+                />;
       case 'payments':
-        return <PaymentSimulator walletId={wallet ? wallet.wallet_id : null} apiUrl={API_URL} />;
+        return <PaymentSimulator
+                  walletId={wallet ? wallet.wallet_id : null}
+                  apiUrl={apiUrl}
+                  onPayment={refreshWalletAndHistory} // Pass refresh function
+                />;
       case 'optimiser':
-        return <DebtOptimiser walletId={wallet ? wallet.wallet_id : null} apiUrl={API_URL} />;
+        return <DebtOptimiser
+                  walletId={wallet ? wallet.wallet_id : null}
+                  apiUrl={apiUrl}
+                />;
       default:
         return null;
     }
@@ -305,10 +183,10 @@ function App() {
       <Toaster position="top-center" reverseOrder={false} />
       
       <header className="text-center mb-6">
-      <h1 className="text-3xl font-bold text-neutral-800">Serverless Fintech Ecosystem</h1>
+        <h1 className="text-3xl font-bold text-neutral-800">Serverless Fintech Ecosystem</h1>
       </header>
 
-      {/* Tab Navigation */}
+      {/* Tab Navigation (Using icons from context, no, icons defined here) */}
       <nav className="flex justify-center border-b border-neutral-300 mb-8 space-x-1 sm:space-x-2">
       {[
         { id: 'wallet', label: 'Wallet', Icon: WalletIcon },
@@ -318,16 +196,16 @@ function App() {
         { id: 'optimiser', label: 'Debt Plan', Icon: ScaleIcon },
       ].map((tab) => (
         <button
-        key={tab.id}
-        onClick={() => { setActiveTab(tab.id); setError(null); }}
-        className={`flex items-center gap-1 sm:gap-1.5 py-2 px-2 sm:px-3 text-xs sm:text-sm font-medium capitalize focus:outline-none whitespace-nowrap ${
-          activeTab === tab.id
-          ? 'border-b-2 border-primary-blue text-primary-blue'
-          : 'text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 border-b-2 border-transparent'
-        }`}
+          key={tab.id}
+          onClick={() => { setActiveTab(tab.id); setError(null); }}
+          className={`flex items-center gap-1 sm:gap-1.5 py-2 px-2 sm:px-3 text-xs sm:text-sm font-medium capitalize focus:outline-none whitespace-nowrap ${
+            activeTab === tab.id
+            ? 'border-b-2 border-primary-blue text-primary-blue'
+            : 'text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 border-b-2 border-transparent'
+          }`}
         >
-        <tab.Icon className="h-4 w-4 sm:h-5 sm:w-5" />
-        {tab.label}
+          <tab.Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+          {tab.label}
         </button>
       ))}
       </nav>

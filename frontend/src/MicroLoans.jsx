@@ -1,18 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { toast } from 'react-hot-toast'; // Import toast
+import { toast } from 'react-hot-toast';
 import Spinner from './Spinner';
-
-// --- Helper to format currency ---
-const formatCurrency = (amount) => {
-    try {
-        const numberAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-        if (isNaN(numberAmount)) return String(amount);
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numberAmount);
-    } catch (e) {
-        console.error("Error formatting currency:", amount, e);
-        return String(amount); // Fallback
-    }
-};
+// Import the context hook and shared helper
+import { useWallet, formatCurrency } from './contexts/WalletContext';
 
 // --- Replicate Backend Rate Logic on Frontend ---
 const calculateDisplayRate = (amount) => {
@@ -28,11 +18,15 @@ const MIN_LOAN_AMOUNT = 50;
 const MAX_LOAN_AMOUNT = 10000;
 const DEFAULT_LOAN_AMOUNT = 1000;
 
-function MicroLoans({ walletId, apiUrl }) {
+// Remove props, they will come from context
+function MicroLoans() {
+    // Get wallet state and functions from context
+    const { wallet, apiUrl, refreshWalletAndHistory } = useWallet();
+    const walletId = wallet ? wallet.wallet_id : null;
+
     const [loans, setLoans] = useState([]);
-    const [loading, setLoading] = useState(false); // General loading for fetch/apply
-    const [actionLoading, setActionLoading] = useState({}); // For approve/reject { loanId: boolean }
-    // const [error, setError] = useState(null); // Replaced by toasts
+    const [loading, setLoading] = useState(false);
+    const [actionLoading, setActionLoading] = useState({});
     const [newLoanAmount, setNewLoanAmount] = useState(String(DEFAULT_LOAN_AMOUNT));
     const [displayRate, setDisplayRate] = useState(calculateDisplayRate(DEFAULT_LOAN_AMOUNT));
     const [repayAmount, setRepayAmount] = useState({});
@@ -56,7 +50,6 @@ function MicroLoans({ walletId, apiUrl }) {
     const fetchLoans = async () => {
         if (!walletId) return;
         setLoading(true);
-        // setError(null);
         try {
             const response = await fetch(`${apiUrl}/loan/by-wallet/${encodeURIComponent(walletId)}`);
             if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
@@ -64,7 +57,7 @@ function MicroLoans({ walletId, apiUrl }) {
             data.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
             setLoans(data);
         } catch (e) {
-            toast.error(`Fetch loans failed: ${e.message}`); // Use toast
+            toast.error(`Fetch loans failed: ${e.message}`);
             setLoans([]);
         } finally {
             setLoading(false);
@@ -76,10 +69,10 @@ function MicroLoans({ walletId, apiUrl }) {
         e.preventDefault();
         const amountNum = parseFloat(newLoanAmount);
         if (!walletId || !newLoanAmount || amountNum <= 0 || amountNum < MIN_LOAN_AMOUNT || amountNum > MAX_LOAN_AMOUNT) {
-            toast.error(`Please select a valid loan amount between ${formatCurrency(MIN_LOAN_AMOUNT)} and ${formatCurrency(MAX_LOAN_AMOUNT)}.`); // Use toast
+            toast.error(`Please select a valid loan amount between ${formatCurrency(MIN_LOAN_AMOUNT)} and ${formatCurrency(MAX_LOAN_AMOUNT)}.`);
             return;
         }
-        setLoading(true); // Use general loading for this form action
+        setLoading(true);
 
         await toast.promise(
             fetch(`${apiUrl}/loan`, {
@@ -98,8 +91,8 @@ function MicroLoans({ walletId, apiUrl }) {
                 return responseBody;
             })
             .then(() => {
-                setNewLoanAmount(String(DEFAULT_LOAN_AMOUNT)); // Reset slider
-                fetchLoans(); // Refresh list
+                setNewLoanAmount(String(DEFAULT_LOAN_AMOUNT));
+                fetchLoans();
             }),
             {
                 loading: 'Submitting application...',
@@ -107,7 +100,7 @@ function MicroLoans({ walletId, apiUrl }) {
                 error: (err) => <b>Application failed: {err.message}</b>,
             }
         );
-        setLoading(false); // Reset general loading
+        setLoading(false);
     };
 
     // --- Approve/Reject Loan (Use Toast) ---
@@ -115,8 +108,7 @@ function MicroLoans({ walletId, apiUrl }) {
         if (!window.confirm(`Are you sure you want to ${action} this loan?`)) {
             return;
         }
-        setActionLoading(prev => ({ ...prev, [loanId]: true })); // Set loading for this loan
-
+        setActionLoading(prev => ({ ...prev, [loanId]: true }));
         await toast.promise(
             fetch(`${apiUrl}/loan/${encodeURIComponent(loanId)}/${action}`, {
                 method: 'POST',
@@ -130,7 +122,14 @@ function MicroLoans({ walletId, apiUrl }) {
                 return responseBody;
             })
             .then(() => {
-                fetchLoans(); // Refetch loans
+                fetchLoans();
+                // If approving, also refresh main wallet (funds are added)
+                if (action === 'approve' && refreshWalletAndHistory) {
+                    // Add a delay to allow SNS event to be processed
+                    setTimeout(() => {
+                        refreshWalletAndHistory();
+                    }, 4000); // 4 second delay
+                }
             }),
             {
                 loading: `${action === 'approve' ? 'Approving' : 'Rejecting'} loan...`,
@@ -138,10 +137,10 @@ function MicroLoans({ walletId, apiUrl }) {
                 error: (err) => <b>Failed to {action} loan: {err.message}</b>,
             }
         );
-        setActionLoading(prev => ({ ...prev, [loanId]: false })); // Clear loading for this loan
+        setActionLoading(prev => ({ ...prev, [loanId]: false }));
     };
 
-    // --- NEW: Handle Repayment ---
+    // --- Handle Repayment (Use Toast and Context Refresh) ---
     const handleRepayment = async (loanId) => {
         const amountStr = String(repayAmount[loanId] || '').trim();
         if (!amountStr || parseFloat(amountStr) <= 0) {
@@ -170,9 +169,11 @@ function MicroLoans({ walletId, apiUrl }) {
                 // Give saga time to run, then refetch
                 setTimeout(() => {
                     fetchLoans();
-                    // We also need to refresh the wallet balance in App.jsx
-                    // This feature is not implemented yet.
-                }, 3000); // 3 second delay
+                    // Call parent refresh function from context
+                    if (refreshWalletAndHistory) {
+                        refreshWalletAndHistory();
+                    }
+                }, 4000); // 4 second delay for saga (debit + log + update loan)
             }),
             {
                 loading: 'Processing repayment...',
@@ -188,6 +189,7 @@ function MicroLoans({ walletId, apiUrl }) {
         setRepayAmount(prev => ({ ...prev, [loanId]: value }));
     };
 
+
     // --- Render Logic ---
     if (!walletId) { return null; }
 
@@ -195,10 +197,8 @@ function MicroLoans({ walletId, apiUrl }) {
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mt-8 shadow-sm">
             <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Micro-Loans</h2>
 
-            {/* General fetch loading */}
             {loading && !Object.values(actionLoading).some(Boolean) && <Spinner />}
-            {/* Remove general error display if using toasts */}
-
+            
             {/* --- Display Existing Loans --- */}
             {!loading && loans.length === 0 && (
                 <p className="text-center text-neutral-500 my-4">No loans found for this wallet.</p>
@@ -206,49 +206,48 @@ function MicroLoans({ walletId, apiUrl }) {
             {!loading && loans.length > 0 && (
                 <div className="space-y-4 mb-6">
                     {loans.map((loan) => {
-                        const isLoadingThisAction = actionLoading[loan.loan_id]; // Check loading for this loan's actions
+                        const isLoadingThisAction = actionLoading[loan.loan_id];
                         const isApproved = loan.status === 'APPROVED';
                         return (
                             <div key={loan.loan_id} className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
                                 <div className="flex justify-between items-start mb-2">
-                                    {/* Status Badge */}
                                     <span className={`text-xs font-medium px-2.5 py-0.5 rounded ${
                                         loan.status === 'APPROVED' ? 'bg-accent-green-light text-accent-green-dark' :
                                         loan.status === 'REJECTED' ? 'bg-accent-red-light text-accent-red-dark' :
-                                        'bg-yellow-100 text-yellow-800' // PENDING
+                                        'bg-yellow-100 text-yellow-800'
                                     }`}>
                                         {loan.status}
                                     </span>
-                                    {/* Approve/Reject Buttons */}
-                                    {loan.status === 'PENDING' && ( // Don't disable outer loading check here
+                                    {loan.status === 'PENDING' && (
                                          <div className="flex gap-2">
                                              <button
                                                  onClick={() => handleLoanAction(loan.loan_id, 'approve')}
                                                  className="px-2 py-1 bg-accent-green text-white text-xs rounded hover:bg-accent-green-dark disabled:bg-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-500"
-                                                 disabled={isLoadingThisAction || loading} // Disable if general loading too
+                                                 disabled={isLoadingThisAction || loading}
                                                 >
                                                  {isLoadingThisAction ? '...' : 'Approve'}
                                              </button>
                                              <button
                                                  onClick={() => handleLoanAction(loan.loan_id, 'reject')}
                                                  className="px-2 py-1 bg-accent-red text-white text-xs rounded hover:bg-accent-red-dark disabled:bg-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-500"
-                                                 disabled={isLoadingThisAction || loading} // Disable if general loading too
+                                                 disabled={isLoadingThisAction || loading}
                                                 >
                                                  {isLoadingThisAction ? '...' : 'Reject'}
                                              </button>
                                          </div>
                                      )}
                                 </div>
-                                {/* Loan Details */}
+                                
                                 <p className="text-sm text-neutral-700">
                                     Amount: <span className="font-semibold">{formatCurrency(loan.amount)}</span>
-                                    {loan.status === 'APPROVED' && ` (Balance: ${formatCurrency(loan.remaining_balance || loan.amount)})`}
+                                    {isApproved && ` (Balance: ${formatCurrency(loan.remaining_balance || loan.amount)})`}
                                 </p>
                                 <p className="text-xs text-neutral-500">
                                     Rate: {loan.interest_rate}% | Min. Payment: {formatCurrency(loan.minimum_payment)} | Term: {loan.loan_term_months || 'N/A'} mo.
                                 </p>
                                 <p className="text-xs text-neutral-400 mt-1 truncate">ID: {loan.loan_id}</p>
-                                {/* --- NEW: Repayment Form for APPROVED loans --- */}
+
+                                {/* --- Repayment Form for APPROVED loans --- */}
                                 {isApproved && (
                                     <div className="flex flex-wrap gap-2 items-center mt-3 pt-3 border-t border-neutral-100">
                                         <input
@@ -279,7 +278,6 @@ function MicroLoans({ walletId, apiUrl }) {
             {/* --- Form to Apply for New Loan --- */}
             <form onSubmit={handleApplyLoan} className="mt-6 pt-4 border-t border-neutral-200">
                 <h4 className="text-md font-semibold text-neutral-700 mb-4">Apply for New Loan</h4>
-                {/* Amount Slider Section */}
                 <div className="mb-4">
                     <div className="flex justify-between items-center mb-1">
                         <label htmlFor="loanAmountSlider" className="text-sm font-medium text-neutral-600">
@@ -293,7 +291,7 @@ function MicroLoans({ walletId, apiUrl }) {
                         id="loanAmountSlider"
                         type="range" min={MIN_LOAN_AMOUNT} max={MAX_LOAN_AMOUNT} step="50"
                         value={newLoanAmount} onChange={(e) => setNewLoanAmount(e.target.value)}
-                        disabled={loading} // Disable slider during general loading
+                        disabled={loading}
                         className="w-full h-2 bg-neutral-200 rounded-lg appearance-none cursor-pointer range-lg dark:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-1"
                     />
                     <div className="flex justify-between text-xs text-neutral-500 mt-1">
@@ -301,15 +299,13 @@ function MicroLoans({ walletId, apiUrl }) {
                         <span>{formatCurrency(MAX_LOAN_AMOUNT)}</span>
                     </div>
                 </div>
-                {/* Submit Button */}
                 <div className="text-center mt-5">
                     <button
                         type="submit"
-                        disabled={loading} // Disable button during general loading
+                        disabled={loading}
                         className="px-4 py-2 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed"
                     >
-                        {/* Loading state handled by toast */}
-                        Apply for Loan
+                        {loading ? 'Submitting...' : 'Apply for Loan'}
                     </button>
                 </div>
             </form>

@@ -1,10 +1,14 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
+import React from 'react'
+import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import './index.css'
+import { WalletProvider } from './contexts/WalletContext.jsx' // Import the provider
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    {/* Wrap App with the WalletProvider */}
+    <WalletProvider>
+      <App />
+    </WalletProvider>
+  </React.StrictMode>,
 )

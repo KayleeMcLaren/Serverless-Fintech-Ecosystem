@@ -1,26 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { toast } from 'react-hot-toast'; // Import toast
+import { toast } from 'react-hot-toast';
 import GoalTransactionHistory from './GoalTransactionHistory';
 import Spinner from './Spinner';
+// Import the context hook and shared helper
+import { useWallet, formatCurrency } from './contexts/WalletContext';
 
-// --- formatCurrency Helper ---
-const formatCurrency = (amount) => {
-  try {
-    const numberAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(numberAmount)) return String(amount);
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numberAmount);
-  } catch (e) {
-    console.error("Error formatting currency:", amount, e);
-    return String(amount);
-  }
-};
-// --- End formatCurrency ---
+// Remove onGoalFunded prop
+function SavingsGoals() {
+  // Get wallet state and functions from context
+  const { wallet, apiUrl, refreshWalletAndHistory } = useWallet();
+  const walletId = wallet ? wallet.wallet_id : null; // Get walletId from wallet object
 
-function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
   const [goals, setGoals] = useState([]);
-  const [loading, setLoading] = useState(false); // General loading for fetch/create
-  const [actionLoading, setActionLoading] = useState({}); // Track loading state per goal ID for delete/add { goalId: boolean }
-  // const [error, setError] = useState(null); // Replaced by toasts
+  const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState({});
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalTarget, setNewGoalTarget] = useState('');
   const [addAmount, setAddAmount] = useState({});
@@ -33,12 +26,11 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
       setGoals([]);
     }
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletId]);
+  }, [walletId]); // Refetch when walletId changes
 
   const fetchGoals = async () => {
     if (!walletId) return;
     setLoading(true);
-    // setError(null); // Replaced by toasts
     try {
       const response = await fetch(`${apiUrl}/savings-goal/by-wallet/${encodeURIComponent(walletId)}`);
       if (!response.ok) {
@@ -49,7 +41,7 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
       const data = await response.json();
       setGoals(Array.isArray(data) ? data : []);
     } catch (e) {
-      toast.error(`Fetch goals failed: ${e.message}`); // Use toast
+      toast.error(`Fetch goals failed: ${e.message}`);
       setGoals([]);
     } finally {
       setLoading(false);
@@ -60,7 +52,7 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
   const handleCreateGoal = async (e) => {
     e.preventDefault();
     if (!walletId || !newGoalName || !newGoalTarget || parseFloat(newGoalTarget) <= 0) {
-      toast.error('Please provide a goal name and a positive target amount.'); // Use toast
+      toast.error('Please provide a goal name and a positive target amount.');
       return;
     }
     setLoading(true);
@@ -85,7 +77,7 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
       .then(() => {
         setNewGoalName('');
         setNewGoalTarget('');
-        fetchGoals(); // Refetch goals after creating
+        fetchGoals();
       }),
       {
          loading: 'Adding goal...',
@@ -101,7 +93,7 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
      if (!window.confirm('Are you sure you want to delete this savings goal?')) {
       return;
     }
-    setActionLoading(prev => ({ ...prev, [goalId]: true })); // Set loading for this specific goal
+    setActionLoading(prev => ({ ...prev, [goalId]: true }));
 
     await toast.promise(
         fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}`, {
@@ -115,7 +107,7 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
             return responseBody;
         })
         .then(() => {
-            fetchGoals(); // Refetch goals after deleting
+            fetchGoals();
         }),
         {
             loading: 'Deleting goal...',
@@ -123,26 +115,26 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
             error: (err) => <b>Failed to delete goal: {err.message}</b>,
         }
     );
-    setActionLoading(prev => ({ ...prev, [goalId]: false })); // Clear loading for this goal
+    setActionLoading(prev => ({ ...prev, [goalId]: false }));
   };
 
   // --- Add Funds to Goal ---
   const handleAddToGoal = async (goalId) => {
     const amountToAddStr = String(addAmount[goalId] || '').trim();
     if (!amountToAddStr || parseFloat(amountToAddStr) <= 0) {
-      toast.error(`Please enter a positive amount.`); // Use toast
+      toast.error(`Please enter a positive amount.`);
       return;
     }
     const amount = parseFloat(amountToAddStr).toFixed(2);
 
-    setActionLoading(prev => ({ ...prev, [goalId]: true })); // Set loading for this goal
+    setActionLoading(prev => ({ ...prev, [goalId]: true }));
 
     await toast.promise(
         fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}/add`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              wallet_id: walletId,
+              wallet_id: walletId, // Use walletId from context
               amount: amount,
             }),
         })
@@ -156,9 +148,13 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
         .then(() => {
             setAddAmount(prev => ({ ...prev, [goalId]: '' }));
             fetchGoals(); // Refetch goals
-            if (onGoalFunded) {
-                onGoalFunded(); // Trigger parent refresh
+
+            // --- Call the refresh function from context ---
+            if (refreshWalletAndHistory) {
+                refreshWalletAndHistory();
             }
+            // ---------------------------------------------
+            
             console.log(`Successfully added funds to goal ${goalId}, triggered parent refresh.`);
         }),
         {
@@ -167,10 +163,10 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
             error: (err) => <b>Failed to add funds: {err.message}</b>,
         }
     );
-    setActionLoading(prev => ({ ...prev, [goalId]: false })); // Clear loading for this goal
+    setActionLoading(prev => ({ ...prev, [goalId]: false }));
   };
 
-  // Helper to update amount state for a specific goal
+  // Helper to update amount state
   const handleAmountChange = (goalId, value) => {
     setAddAmount(prev => ({ ...prev, [goalId]: value }));
   };
@@ -189,8 +185,6 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
       <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Savings Goals</h2>
 
       {loading && <Spinner />}
-      {/* Remove general error display if using toasts exclusively */}
-      {/* {error && <p className="my-4 p-3 bg-accent-red-light ...">{error}</p>} */}
 
       {!loading && goals.length === 0 && (
         <p className="text-center text-neutral-500 my-4">No savings goals found for this wallet.</p>
@@ -201,7 +195,7 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
             const current = parseFloat(goal.current_amount || '0');
             const target = parseFloat(goal.target_amount);
             const percentage = target > 0 ? Math.min((current / target) * 100, 100) : 0;
-            const isLoadingThisGoalAction = actionLoading[goal.goal_id]; // Check loading state for this goal's actions
+            const isLoadingThisGoalAction = actionLoading[goal.goal_id];
 
             return (
               <li key={goal.goal_id} className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
@@ -216,7 +210,7 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
                   </div>
                    <button
                      onClick={() => handleDeleteGoal(goal.goal_id)}
-                     disabled={loading || isLoadingThisGoalAction} // Disable if general or specific action loading
+                     disabled={loading || isLoadingThisGoalAction}
                      className="px-2 py-1 bg-accent-red text-white text-xs rounded hover:bg-accent-red-dark disabled:bg-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-500 flex-shrink-0"
                    >
                     {isLoadingThisGoalAction ? '...' : 'Delete'}
@@ -262,11 +256,33 @@ function SavingsGoals({ walletId, apiUrl, onGoalFunded }) {
       <form onSubmit={handleCreateGoal} className="mt-6 pt-4 border-t border-neutral-200">
          <h4 className="text-md font-semibold text-neutral-700 mb-3">Add New Goal</h4>
         <div className="flex flex-wrap gap-3 mb-3 items-stretch">
-          <input /* Goal Name Input */ />
-          <input /* Target Amount Input */ />
+          <input
+            type="text"
+            value={newGoalName}
+            onChange={(e) => setNewGoalName(e.target.value)}
+            placeholder="Goal Name (e.g., Vacation)"
+            disabled={loading}
+            className="flex-grow basis-40 p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 min-w-[120px]"
+            required
+          />
+          <input
+            type="number"
+            value={newGoalTarget}
+            onChange={(e) => setNewGoalTarget(e.target.value)}
+            placeholder="Target Amount ($)"
+            disabled={loading}
+            min="0.01"
+            step="0.01"
+            className="flex-grow basis-32 p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 min-w-[100px]"
+            required
+          />
         </div>
         <div className="text-center">
-          <button type="submit" /* Add Goal Button */ >
+          <button
+            type="submit"
+            disabled={loading || !newGoalName || !newGoalTarget}
+            className="px-4 py-2 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed"
+          >
             {loading ? 'Adding...' : 'Add Goal'}
           </button>
         </div>
