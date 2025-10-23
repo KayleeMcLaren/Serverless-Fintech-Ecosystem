@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import Spinner from './Spinner';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+// --- Import Recharts Components ---
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+} from 'recharts';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
 import { BanknotesIcon } from '@heroicons/react/24/outline'; // Icon for empty state
 
@@ -10,6 +13,7 @@ import { BanknotesIcon } from '@heroicons/react/24/outline'; // Icon for empty s
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     const data = payload[0];
+    // Check dataKey, not name
     const isTime = data.dataKey === 'Payoff Time (Months)';
     const value = isTime ? `${data.value} months` : formatCurrency(data.value);
     const name = isTime ? "Time" : "Interest";
@@ -26,14 +30,14 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 
 function DebtOptimiser() {
-  const { wallet, apiUrl } = useWallet(); // Get wallet and apiUrl
-  const walletId = wallet ? wallet.wallet_id : null; // Get walletId from wallet
+  const { wallet, apiUrl } = useWallet();
+  const walletId = wallet ? wallet.wallet_id : null;
 
   const [budget, setBudget] = useState('');
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [chartData, setChartData] = useState([]);
-  const [noLoansFound, setNoLoansFound] = useState(false); // State for empty
+  const [noLoansFound, setNoLoansFound] = useState(false);
 
   // --- Format data for charts ---
   useEffect(() => {
@@ -65,8 +69,8 @@ function DebtOptimiser() {
       return;
     }
     setLoading(true);
-    setResults(null); // Clear previous results
-    setNoLoansFound(false); // Reset empty state
+    setResults(null);
+    setNoLoansFound(false);
 
     const calculationToastId = toast.loading('Calculating plans...');
 
@@ -83,22 +87,18 @@ function DebtOptimiser() {
       const responseBody = await response.json();
 
       if (!response.ok) {
-        // Check for 404 (No Loans Found)
         if (response.status === 404) {
-          setNoLoansFound(true); // Set the empty state
-          toast.dismiss(calculationToastId); // Dismiss loading toast
+          setNoLoansFound(true);
+          toast.dismiss(calculationToastId);
         } 
-        // Handle 400 (Budget too low)
         else if (response.status === 400 && responseBody.total_minimum_payment) {
           const minPayment = formatCurrency(responseBody.total_minimum_payment);
           throw new Error(`Budget is too low. Total minimum payment is ${minPayment}.`);
         }
-        // Handle other errors
         else {
           throw new Error(responseBody.message || `HTTP error! Status: ${response.status}`);
         }
       } else {
-        // Success
         setResults(responseBody);
         toast.success(<b>Calculation complete!</b>, { id: calculationToastId });
       }
@@ -106,7 +106,7 @@ function DebtOptimiser() {
       console.error("Calculation failed:", error);
       toast.error(<b>{error.message}</b>, { id: calculationToastId });
     } finally {
-      setLoading(false); // Stop loading state
+      setLoading(false);
     }
   };
 
@@ -165,6 +165,7 @@ function DebtOptimiser() {
       {results && !loading && (
         <div className="mt-6">
            <h3 className="text-lg font-semibold text-neutral-800 mb-4 text-center">Comparison Results</h3>
+            {/* Summary Section */}
             <div className="mb-6 p-4 bg-white border border-neutral-200 rounded-md shadow-sm text-sm">
                 <h4 className="font-medium text-neutral-700 mb-2">Summary</h4>
                 <p className="text-neutral-600">Total Approved Loans: <span className="font-semibold text-neutral-800">{results.summary.total_loans}</span></p>
@@ -172,21 +173,40 @@ function DebtOptimiser() {
                 <p className="text-neutral-600">Your Monthly Budget: <span className="font-semibold text-neutral-800">{formatCurrency(results.summary.monthly_budget)}</span></p>
                 <p className="text-neutral-600">Extra Payment Applied: <span className="font-semibold text-accent-green-dark">{formatCurrency(results.summary.extra_payment)}</span></p>
             </div>
+            
+             {/* --- THIS IS THE MISSING JSX --- */}
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="p-4 bg-primary-blue-light/20 border border-primary-blue/30 rounded-md shadow-sm">
-                  <h4 className="font-medium text-primary-blue-dark mb-2">Avalanche Plan</h4>
-                  <p className="text-sm text-neutral-700">Payoff Time: <span className="font-semibold text-neutral-900">{results.avalanche_plan.months_to_payoff} months</span></p>
-                  <p className="text-sm text-neutral-700">Total Interest Paid: <span className="font-semibold text-neutral-900">{formatCurrency(results.avalanche_plan.total_interest_paid)}</span></p>
-                  <p className="text-xs text-neutral-500 mt-1">(Targets highest interest rate first)</p>
+                {/* Chart 1: Payoff Time */}
+                <div className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
+                    <h4 className="font-medium text-neutral-700 mb-4 text-center">Payoff Time (Months)</h4>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={chartData} margin={{ top: 5, right: 10, left: -25, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" />
+                        <XAxis dataKey="name" stroke="#4b5563" />
+                        <YAxis stroke="#4b5563" allowDecimals={false} tickFormatter={(value) => `${value} mo`} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar dataKey="Payoff Time (Months)" fill="#3b82f6" name="Time" /> {/* primary-blue */}
+                      </BarChart>
+                    </ResponsiveContainer>
                 </div>
-                <div className="p-4 bg-purple-50 border border-purple-200 rounded-md shadow-sm">
-                  <h4 className="font-medium text-purple-800 mb-2">Snowball Plan</h4>
-                  <p className="text-sm text-neutral-700">Payoff Time: <span className="font-semibold text-neutral-900">{results.snowball_plan.months_to_payoff} months</span></p>
-                  <p className="text-sm text-neutral-700">Total Interest Paid: <span className="font-semibold text-neutral-900">{formatCurrency(results.snowball_plan.total_interest_paid)}</span></p>
-                   <p className="text-xs text-neutral-500 mt-1">(Targets lowest balance first)</p>
+                {/* Chart 2: Total Interest */}
+                <div className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
+                   <h4 className="font-medium text-neutral-700 mb-4 text-center">Total Interest Paid ($)</h4>
+                   <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={chartData} margin={{ top: 5, right: 10, left: -25, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" />
+                        <XAxis dataKey="name" stroke="#4b5563" />
+                        <YAxis stroke="#4b5563" allowDecimals={false} tickFormatter={(value) => `$${value}`} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar dataKey="Total Interest Paid" fill="#8b5cf6" name="Interest" /> {/* purple-500 */}
+                      </BarChart>
+                    </ResponsiveContainer>
                 </div>
              </div>
-              <div className="mt-6 text-center p-3 bg-accent-green-light border border-accent-green/50 rounded-md">
+             {/* --- END MISSING JSX --- */}
+
+             {/* Recommendation */}
+             <div className="mt-6 text-center p-3 bg-accent-green-light border border-accent-green/50 rounded-md">
                 <p className="font-semibold text-accent-green-dark">
                     Recommendation: The '{parseFloat(results.avalanche_plan.total_interest_paid) < parseFloat(results.snowball_plan.total_interest_paid) ? 'Avalanche' : 'Snowball'}'
                     plan will likely save you the most money on interest.
