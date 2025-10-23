@@ -133,14 +133,7 @@ export function WalletProvider({ children }) {
   };
 
   const handleTransaction = async (type) => {
-    if (!wallet || !wallet.wallet_id) {
-      toast.error('No wallet loaded.'); return;
-    }
-    const amountStr = String(amountInput).trim();
-    if (!amountStr || parseFloat(amountStr) <= 0) {
-      toast.error('Please enter a positive amount.'); return;
-    }
-    const amount = parseFloat(amountStr);
+    const amount = parseFloat(String(amountInput).trim());
     setLoading(true);
     // setError(null);
 
@@ -153,7 +146,14 @@ export function WalletProvider({ children }) {
           body: JSON.stringify({ amount: amount.toFixed(2) }),
         }
       )
-      .then(async (response) => { /* ... error handling ... */ return response.json(); }),
+      .then(async (response) => {
+       const responseBody = await response.json();
+       if (!response.ok) {
+          const apiErrorMsg = responseBody?.message || `HTTP error! Status: ${response.status}`;
+          throw new Error(apiErrorMsg);
+       }
+       return responseBody;
+    }),
       {
         loading: `${type === 'credit' ? 'Depositing' : 'Withdrawing'}...`,
         success: (responseBody) => {

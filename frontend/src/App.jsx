@@ -7,6 +7,7 @@ import PaymentSimulator from './PaymentSimulator';
 import DebtOptimiser from './DebtOptimiser';
 import TransactionHistory from './TransactionHistory';
 import Spinner from './Spinner';
+import Wallet from './Wallet';
 // Import Icons
 import {
   WalletIcon, BanknotesIcon, CreditCardIcon, ArrowsRightLeftIcon, ScaleIcon
@@ -54,105 +55,7 @@ function App() {
   const renderTabContent = () => {
     switch (activeTab) {
       case 'wallet':
-        return (
-          // --- This is the Wallet Component JSX ---
-          <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mb-8 shadow-sm">
-            <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Digital Wallet</h2>
-            
-            {/* Input group for fetching wallet */}
-            <div className="flex flex-wrap gap-3 mb-4 items-stretch">
-              <input
-                  type="text"
-                  value={walletIdInput} // Get from context
-                  onChange={(e) => setWalletIdInput(e.target.value)} // Set in context
-                  placeholder="Enter Wallet ID"
-                  disabled={loading} // Get from context
-                  className="flex-grow basis-60 p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 min-w-[150px]"
-              />
-              <button
-                  onClick={onFetchClick} // Use the toast-wrapper
-                  disabled={loading || !walletIdInput}
-                  className="px-4 py-2 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed flex-shrink-0"
-              >
-                  {loading && !wallet ? 'Fetching...' : 'Fetch Wallet'}
-              </button>
-            </div>
-
-            <p className="text-center text-neutral-500 my-4">Or</p>
-
-            {/* Create Button */}
-            <div className="text-center">
-              <button
-                  onClick={handleCreateWallet} // Get from context
-                  disabled={loading}
-                  className="px-4 py-2 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed"
-              >
-                  {loading && !wallet ? 'Creating...' : 'Create New Wallet'}
-              </button>
-            </div>
-
-            {/* Wallet Details and Transactions - Only if wallet exists */}
-            {wallet && (
-                 <div className="mt-6 p-4 bg-primary-blue-light/20 border border-primary-blue/30 rounded-md text-left">
-                    <h3 className="text-lg font-semibold text-primary-blue-dark mb-3">Wallet Details</h3>
-                    <p className="text-sm mb-1 break-words">
-                        <strong className="text-neutral-600">Wallet ID:</strong>
-                        <span className="ml-2 font-mono text-primary-blue-dark">{wallet.wallet_id}</span>
-                    </p>
-                    <p className="text-sm mb-1">
-                        <strong className="text-neutral-600">Balance:</strong>
-                        <span className="ml-2 font-mono text-primary-blue-dark">{formatCurrency(wallet.balance)}</span>
-                    </p>
-                    <p className="text-sm">
-                        <strong className="text-neutral-600">Currency:</strong>
-                        <span className="ml-2 font-mono text-primary-blue-dark">{wallet.currency}</span>
-                    </p>
-                     
-                     {/* Transaction Section */}
-                    <div className="mt-5 pt-4 border-t border-primary-blue/30">
-                        <h4 className="text-md font-semibold text-neutral-700 mb-3">Make a Transaction</h4>
-                        <div className="mb-3">
-                            <input
-                            type="number"
-                            value={amountInput} // Get from context
-                            onChange={(e) => setAmountInput(e.target.value)} // Set in context
-                            placeholder="Enter amount"
-                            disabled={loading}
-                            min="0.01" step="0.01"
-                            className="w-full p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50"
-                            />
-                        </div>
-                        <div className="flex justify-center gap-3 mt-2">
-                            <button
-                                onClick={() => handleTransaction('credit')} // Get from context
-                                disabled={loading || !amountInput}
-                                className="px-4 py-2 bg-accent-green text-white rounded-md hover:bg-accent-green-dark focus:outline-none focus:ring-2 focus:ring-accent-green focus:ring-offset-2 disabled:bg-accent-green-light disabled:cursor-not-allowed"
-                            >
-                                Credit
-                            </button>
-                            <button
-                                onClick={() => handleTransaction('debit')} // Get from context
-                                disabled={loading || !amountInput}
-                                className="px-4 py-2 bg-accent-red text-white rounded-md hover:bg-accent-red-dark focus:outline-none focus:ring-2 focus:ring-accent-red focus:ring-offset-2 disabled:bg-accent-red-light disabled:cursor-not-allowed"
-                            >
-                                Debit
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Transaction History - Pass key from context */}
-                    <TransactionHistory
-                        key={transactionCount} // Get from context
-                        walletId={wallet.wallet_id}
-                        apiUrl={apiUrl} // Get from context
-                    />
-                </div>
-            )}
-            {/* Show loading spinner if wallet is loading */}
-            {loading && !wallet && <Spinner />}
-          </div>
-          // --- End Wallet Component JSX ---
-        );
+        return <Wallet />;
 
       case 'savings':
         // No props needed, SavingsGoals will use useWallet()
