@@ -88,8 +88,8 @@ def process_payment_request(event, context):
             sns_message = json.loads(sns_message_str)
             event_type = sns_message.get('event_type')
             
-            # Use 'details' key which holds the original payload
-            event_details = sns_message.get('details', {}) 
+            ## Check for 'details' (from loan) OR 'transaction_details' (from payment)
+            event_details = sns_message.get('details') or sns_message.get('transaction_details') or {}
             
             wallet_id = event_details.get('wallet_id')
             amount_str = event_details.get('amount', '0.00')

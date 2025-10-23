@@ -115,16 +115,22 @@ export function WalletProvider({ children }) {
   };
   
   // Refresh function that child components can call
-  const refreshWalletAndHistory = useCallback(() => {
+  // --- NEW: Function to refresh wallet balance AND trigger history refresh ---
+  const refreshWalletAndHistory = () => {
       console.log("Refreshing wallet balance and transaction history...");
-      if (wallet?.wallet_id) {
-          handleFetchWallet(wallet.wallet_id, true).catch(err => {
-              console.error("Refresh fetch failed:", err.message);
-              // Don't show toast, error will be set by handleFetchWallet if needed
+      // Use walletIdInput, which is reliably set from state
+      if (walletIdInput) {
+          handleFetchWallet(walletIdInput, true).catch(err => {
+              // If the refresh fetch fails, show a toast
+              console.error("Wallet refresh failed:", err.message);
+              toast.error(`Wallet refresh failed: ${err.message}`);
           });
+          // Always update the transaction count to refetch history
           setTransactionCount(prev => prev + 1);
+      } else {
+          console.log("Refresh skipped, no wallet ID input.");
       }
-  }, [wallet, handleFetchWallet]); // Add dependencies
+  };
 
   const handleTransaction = async (type) => {
     if (!wallet || !wallet.wallet_id) {
