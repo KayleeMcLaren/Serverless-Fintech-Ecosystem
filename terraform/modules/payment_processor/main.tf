@@ -26,7 +26,8 @@ data "aws_iam_policy_document" "dynamodb_transactions_table_policy_doc" {
     actions = [
       "dynamodb:PutItem",
       "dynamodb:GetItem",
-      "dynamodb:UpdateItem"
+      "dynamodb:UpdateItem",
+      "dynamodb:Query"
     ]
     resources = [
       var.dynamodb_table_arn,
@@ -99,6 +100,28 @@ resource "aws_lambda_function" "get_transaction_status_lambda" {
   filename         = data.archive_file.get_transaction_status_zip.output_path
   source_code_hash = data.archive_file.get_transaction_status_zip.output_base64sha256
   handler          = "handler.get_transaction_status"
+  runtime          = "python3.12"
+  tags             = var.tags
+  environment {
+    variables = {
+      DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+    }
+  }
+}
+
+# --- LAMBDA: GET PAYMENTS BY WALLET (API) ---
+data "archive_file" "get_payments_by_wallet_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/get_payments_by_wallet"
+  output_path = "${path.module}/get_payments_by_wallet.zip"
+}
+
+resource "aws_lambda_function" "get_payments_by_wallet_lambda" {
+  function_name    = "${var.project_name}-get-payments-by-wallet"
+  role             = aws_iam_role.lambda_exec_role.arn # Reuses the role
+  filename         = data.archive_file.get_payments_by_wallet_zip.output_path
+  source_code_hash = data.archive_file.get_payments_by_wallet_zip.output_base64sha256
+  handler          = "handler.get_payments_by_wallet"
   runtime          = "python3.12"
   tags             = var.tags
   environment {
@@ -262,6 +285,35 @@ resource "aws_api_gateway_integration_response" "get_transaction_status_options_
   depends_on = [aws_api_gateway_integration.get_transaction_status_options_integration]
 }
 
+# --- API GATEWAY: GET /payment/by-wallet/{wallet_id} ---
+resource "aws_api_gateway_resource" "payment_by_wallet_resource" {
+  rest_api_id = var.api_gateway_id
+  parent_id   = aws_api_gateway_resource.payment_resource.id # Attaches to /payment
+  path_part   = "by-wallet"
+}
+
+resource "aws_api_gateway_resource" "payment_by_wallet_id_resource" {
+  rest_api_id = var.api_gateway_id
+  parent_id   = aws_api_gateway_resource.payment_by_wallet_resource.id # Attaches to /payment/by-wallet
+  path_part   = "{wallet_id}"
+}
+
+resource "aws_api_gateway_method" "get_payments_by_wallet_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "get_payments_by_wallet_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id             = aws_api_gateway_resource.payment_by_wallet_id_resource.id
+  http_method             = aws_api_gateway_method.get_payments_by_wallet_method.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.get_payments_by_wallet_lambda.invoke_arn
+}
+
 # --- API PERMISSIONS ---
 resource "aws_lambda_permission" "api_gateway_request_payment_permission" {
   statement_id  = "AllowAPIGatewayToInvokeRequestPayment"
@@ -299,6 +351,60 @@ resource "aws_lambda_function" "update_transaction_status_lambda" {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
     }
   }
+}
+
+# --- API PERMISSION: GET PAYMENTS BY WALLET ---
+resource "aws_lambda_permission" "api_gateway_get_payments_by_wallet_permission" {
+  statement_id  = "AllowAPIGatewayToInvokeGetPaymentsByWallet"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.get_payments_by_wallet_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${var.api_gateway_execution_arn}/*/*"
+}
+
+# --- API: OPTIONS /payment/by-wallet/{wallet_id} (CORS Preflight) ---
+resource "aws_api_gateway_method" "get_payments_by_wallet_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "get_payments_by_wallet_options_integration" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
+  http_method   = aws_api_gateway_method.get_payments_by_wallet_options_method.http_method
+  type          = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "get_payments_by_wallet_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
+   http_method   = aws_api_gateway_method.get_payments_by_wallet_options_method.http_method
+   status_code   = "200"
+   response_models = { "application/json" = "Empty" }
+   response_parameters = {
+     "method.response.header.Access-Control-Allow-Headers" = true,
+     "method.response.header.Access-Control-Allow-Methods" = true,
+     "method.response.header.Access-Control-Allow-Origin" = true,
+     "method.response.header.Access-Control-Allow-Credentials" = true
+   }
+}
+
+resource "aws_api_gateway_integration_response" "get_payments_by_wallet_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.payment_by_wallet_id_resource.id
+  http_method = aws_api_gateway_method.get_payments_by_wallet_options_method.http_method
+  status_code = aws_api_gateway_method_response.get_payments_by_wallet_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'", # Allow GET
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'",
+    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
+  }
+  response_templates = { "application/json" = "" }
+  depends_on = [aws_api_gateway_integration.get_payments_by_wallet_options_integration]
 }
 
 # --- SNS SUBSCRIPTION & PERMISSION (PAYMENT RESULTS) ---

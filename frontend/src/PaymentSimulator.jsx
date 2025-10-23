@@ -46,9 +46,19 @@ function PaymentSimulator({ walletId, apiUrl }) {
    const fetchTransactions = async () => {
     if (!walletId) return;
     setListLoading(true);
+    // setError(null); // Toasts are used for errors
     try {
-      console.warn("fetchTransactions: 'GET /payment/by-wallet/{id}' endpoint not yet implemented.");
-      setTransactions([]);
+      // Call the new endpoint
+      const response = await fetch(`${apiUrl}/payment/by-wallet/${encodeURIComponent(walletId)}`);
+      if (!response.ok) {
+          let errorMsg = `HTTP error! Status: ${response.status}`;
+          try { const errBody = await response.json(); errorMsg = errBody.message || errorMsg; } catch(e){}
+          throw new Error(errorMsg);
+      }
+      const data = await response.json();
+      // The Lambda already sorted the data
+      setTransactions(Array.isArray(data) ? data : []);
+      console.log(`Fetched ${data.length} payment transactions.`);
     } catch (e) {
       toast.error(`Fetch transactions failed: ${e.message}`);
       setTransactions([]);
