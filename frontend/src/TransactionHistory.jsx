@@ -93,6 +93,7 @@ function TransactionHistory({ walletId, apiUrl }) {
         case 'PAYMENT_OUT': return `Payment to ${merchantName}`;
         // Use goalName from details
         case 'SAVINGS_ADD': return `Added to ${goalName}`;
+        case 'LOAN_REPAYMENT': return 'Loan Repayment';
         default: return tx.type || 'Transaction'; // Fallback
     }
   };

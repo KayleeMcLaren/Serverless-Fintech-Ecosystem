@@ -213,6 +213,9 @@ module "micro_loan" {
   dynamodb_table_name          = aws_dynamodb_table.loans_table.name
   dynamodb_table_arn           = aws_dynamodb_table.loans_table.arn
   sns_topic_arn                = aws_sns_topic.loan_events.arn
+  payment_sns_topic_arn        = aws_sns_topic.payment_events.arn
+  transactions_log_table_name = aws_dynamodb_table.transactions_log_table.name
+  transactions_log_table_arn  = aws_dynamodb_table.transactions_log_table.arn
 }
 
 module "payment_processor" {

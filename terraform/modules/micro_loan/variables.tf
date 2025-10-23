@@ -37,3 +37,16 @@ variable "sns_topic_arn" {
   description = "The ARN of the SNS topic for loan events"
   type        = string
 }
+
+variable "payment_sns_topic_arn" { # This is for PAYMENT_EVENTS
+  description = "The ARN of the SNS topic for payment events"
+  type        = string
+}
+variable "transactions_log_table_name" {
+  description = "The name of the transaction logs DynamoDB table"
+  type        = string
+}
+variable "transactions_log_table_arn" {
+  description = "The ARN of the transaction logs DynamoDB table"
+  type        = string
+}

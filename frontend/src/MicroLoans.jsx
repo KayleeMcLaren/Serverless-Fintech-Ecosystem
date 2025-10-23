@@ -35,6 +35,7 @@ function MicroLoans({ walletId, apiUrl }) {
     // const [error, setError] = useState(null); // Replaced by toasts
     const [newLoanAmount, setNewLoanAmount] = useState(String(DEFAULT_LOAN_AMOUNT));
     const [displayRate, setDisplayRate] = useState(calculateDisplayRate(DEFAULT_LOAN_AMOUNT));
+    const [repayAmount, setRepayAmount] = useState({});
 
     // --- Fetch loans when walletId changes ---
     useEffect(() => {
@@ -140,6 +141,52 @@ function MicroLoans({ walletId, apiUrl }) {
         setActionLoading(prev => ({ ...prev, [loanId]: false })); // Clear loading for this loan
     };
 
+    // --- NEW: Handle Repayment ---
+    const handleRepayment = async (loanId) => {
+        const amountStr = String(repayAmount[loanId] || '').trim();
+        if (!amountStr || parseFloat(amountStr) <= 0) {
+            toast.error('Please enter a positive repayment amount.');
+            return;
+        }
+        const amount = parseFloat(amountStr).toFixed(2);
+        
+        setActionLoading(prev => ({ ...prev, [loanId]: true }));
+
+        await toast.promise(
+            fetch(`${apiUrl}/loan/${encodeURIComponent(loanId)}/repay`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount: amount }),
+            })
+            .then(async (response) => {
+                const responseBody = await response.json();
+                if (!response.ok) {
+                    throw new Error(responseBody?.message || `HTTP error! Status: ${response.status}`);
+                }
+                return responseBody;
+            })
+            .then(() => {
+                setRepayAmount(prev => ({ ...prev, [loanId]: '' }));
+                // Give saga time to run, then refetch
+                setTimeout(() => {
+                    fetchLoans();
+                    // We also need to refresh the wallet balance in App.jsx
+                    // This feature is not implemented yet.
+                }, 3000); // 3 second delay
+            }),
+            {
+                loading: 'Processing repayment...',
+                success: <b>Repayment request submitted!</b>,
+                error: (err) => <b>Repayment failed: {err.message}</b>,
+            }
+        );
+        setActionLoading(prev => ({ ...prev, [loanId]: false }));
+    };
+
+    // Helper for repayment input
+    const handleRepayAmountChange = (loanId, value) => {
+        setRepayAmount(prev => ({ ...prev, [loanId]: value }));
+    };
 
     // --- Render Logic ---
     if (!walletId) { return null; }
@@ -160,6 +207,7 @@ function MicroLoans({ walletId, apiUrl }) {
                 <div className="space-y-4 mb-6">
                     {loans.map((loan) => {
                         const isLoadingThisAction = actionLoading[loan.loan_id]; // Check loading for this loan's actions
+                        const isApproved = loan.status === 'APPROVED';
                         return (
                             <div key={loan.loan_id} className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
                                 <div className="flex justify-between items-start mb-2">
@@ -200,6 +248,28 @@ function MicroLoans({ walletId, apiUrl }) {
                                     Rate: {loan.interest_rate}% | Min. Payment: {formatCurrency(loan.minimum_payment)} | Term: {loan.loan_term_months || 'N/A'} mo.
                                 </p>
                                 <p className="text-xs text-neutral-400 mt-1 truncate">ID: {loan.loan_id}</p>
+                                {/* --- NEW: Repayment Form for APPROVED loans --- */}
+                                {isApproved && (
+                                    <div className="flex flex-wrap gap-2 items-center mt-3 pt-3 border-t border-neutral-100">
+                                        <input
+                                            type="number"
+                                            placeholder="Repay Amount"
+                                            min="0.01"
+                                            step="0.01"
+                                            value={repayAmount[loan.loan_id] || ''}
+                                            onChange={(e) => handleRepayAmountChange(loan.loan_id, e.target.value)}
+                                            disabled={loading || isLoadingThisAction}
+                                            className="flex-grow basis-28 p-1.5 border border-neutral-300 rounded-md text-sm focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50"
+                                        />
+                                        <button
+                                            onClick={() => handleRepayment(loan.loan_id)}
+                                            disabled={loading || isLoadingThisAction || !(repayAmount[loan.loan_id] > 0)}
+                                            className="px-3 py-1.5 bg-primary-blue text-white text-xs rounded hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-1 disabled:bg-neutral-300 disabled:cursor-not-allowed"
+                                        >
+                                            {isLoadingThisAction ? 'Paying...' : 'Make Payment'}
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         );
                     })}
