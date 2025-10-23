@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Spinner from './Spinner';
 
 // --- DEFINE formatCurrency HERE ---
 const formatCurrency = (amount) => {
@@ -102,7 +103,11 @@ function TransactionHistory({ walletId, apiUrl }) {
   return (
     <div className="mt-5 pt-4 border-t border-neutral-200"> {/* Use neutral border */}
       <h4 className="text-md font-semibold text-neutral-700 mb-3">Transaction History</h4>
-      {loading && <p className="text-center text-primary-blue my-2">Loading history...</p>}
+    {loading && (
+      <div className="flex justify-center items-center my-2">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-blue"></div>
+      </div>
+    )}
       {error && <p className="my-2 p-2 bg-accent-red-light border border-accent-red text-accent-red-dark rounded-md text-sm">{error}</p>}
 
       {!loading && transactions.length === 0 && (

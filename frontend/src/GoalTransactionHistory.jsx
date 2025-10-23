@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Spinner from './Spinner';
 
 const formatCurrency = (amount) => { try { const num = typeof amount === 'string' ? parseFloat(amount) : amount; if(isNaN(num)) return '?'; return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num); } catch(e){ return '?';} };
 const formatTimestamp = (timestamp) => { try { const num = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp; if(isNaN(num)) return '?'; return new Date(num * 1000).toLocaleDateString(); } catch(e){ return '?'; } };
@@ -43,7 +44,11 @@ function GoalTransactionHistory({ goalId, apiUrl }) {
   return (
     <div className="mt-4 pt-3 border-t border-neutral-200">
       <h5 className="text-xs font-semibold text-neutral-600 mb-2">Contribution History</h5>
-      {loading && <p className="text-center text-primary-blue my-1 text-xs">Loading history...</p>}
+      {loading && (
+        <div className="flex justify-center items-center my-1">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-blue"></div>
+        </div>
+      )}
       {error && <p className="my-1 p-1 bg-accent-red-light border border-accent-red text-accent-red-dark rounded text-xs">{error}</p>}
 
       {!loading && transactions.length === 0 && (
