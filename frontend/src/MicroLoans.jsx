@@ -3,6 +3,7 @@ import { toast } from 'react-hot-toast';
 import Spinner from './Spinner';
 import ConfirmModal from './ConfirmModal';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
+import { CurrencyDollarIcon } from '@heroicons/react/24/outline';
 
 // --- Replicate Backend Rate Logic on Frontend ---
 const calculateDisplayRate = (amount) => {
@@ -30,9 +31,7 @@ function MicroLoans() {
     const [newLoanAmount, setNewLoanAmount] = useState(String(DEFAULT_LOAN_AMOUNT));
     const [displayRate, setDisplayRate] = useState(calculateDisplayRate(DEFAULT_LOAN_AMOUNT));
     const [repayAmount, setRepayAmount] = useState({});
-
     const [isModalOpen, setIsModalOpen] = useState(false);
-    // State to hold info for the confirmation modal
     const [modalAction, setModalAction] = useState(null); // e.g., { action: 'approve', loanId: '...' }
 
     // --- Fetch loans when walletId changes ---
@@ -208,7 +207,6 @@ function MicroLoans() {
         handleModalClose(); // Close the modal
     };
 
-
     // --- Render Logic ---
     if (!walletId) { return null; }
 
@@ -220,8 +218,15 @@ function MicroLoans() {
             
             {/* --- Display Existing Loans --- */}
             {!loading && loans.length === 0 && (
-                <p className="text-center text-neutral-500 my-4">No loans found for this wallet.</p>
+                // --- 5. NEW EMPTY STATE ---
+                <div className="text-center text-neutral-500 my-4 py-8">
+                  <CurrencyDollarIcon className="h-12 w-12 mx-auto text-neutral-400" />
+                  <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Loans Found</h3>
+                  <p className="mt-1 text-sm text-neutral-500">Apply for a new loan using the form below.</p>
+                </div>
+                // --- END EMPTY STATE ---
             )}
+
             {!loading && loans.length > 0 && (
                 <div className="space-y-4 mb-6">
                     {loans.map((loan) => {

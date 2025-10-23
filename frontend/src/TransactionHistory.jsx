@@ -1,40 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import Spinner from './Spinner';
-
-// --- DEFINE formatCurrency HERE ---
-const formatCurrency = (amount) => {
-  try {
-    // Attempt to convert to number if it's a string representation from DynamoDB
-    const numberAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-    // Check if the conversion resulted in NaN (Not a Number)
-    if (isNaN(numberAmount)) return String(amount); // Return original string if invalid
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numberAmount);
-  } catch (e) {
-    console.error("Error formatting currency:", amount, e);
-    return String(amount); // Fallback to original string representation
-  }
-};
-// --- END formatCurrency ---
+import Spinner from './Spinner'; // Import Spinner
+import { ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
+// Import context hook and shared helper
+import { useWallet, formatCurrency } from './contexts/WalletContext';
 
 // Helper to format timestamp
 const formatTimestamp = (timestamp) => {
     if (!timestamp) return 'N/A';
     try {
-        // Ensure timestamp is a number before multiplying
         const numericTimestamp = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp;
         if (isNaN(numericTimestamp)) return 'Invalid Date';
-        return new Date(numericTimestamp * 1000).toLocaleString(); // Convert seconds to milliseconds
+        return new Date(numericTimestamp * 1000).toLocaleString();
     } catch (e) {
         console.error("Error formatting timestamp:", timestamp, e);
         return 'Invalid Date';
     }
 };
 
-function TransactionHistory({ walletId, apiUrl }) {
+// --- Use Context, Remove Props ---
+function TransactionHistory() {
+  // 1. Get wallet state and functions from context
+  const { wallet, apiUrl, transactionCount } = useWallet();
+  const walletId = wallet ? wallet.wallet_id : null; // Get walletId from context
+  
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // 2. Use a separate useEffect to refetch history
   useEffect(() => {
     if (walletId) {
       fetchHistory();
@@ -42,27 +35,20 @@ function TransactionHistory({ walletId, apiUrl }) {
       setTransactions([]);
     }
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletId]);
+  }, [walletId, transactionCount]); // 3. Add transactionCount dependency
 
   const fetchHistory = async () => {
     if (!walletId) return;
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${apiUrl}/wallet/${encodeURIComponent(walletId)}/transactions?limit=20`); // Fetch last 20
+      const response = await fetch(`${apiUrl}/wallet/${encodeURIComponent(walletId)}/transactions?limit=20`);
       if (!response.ok) {
-        // Try parsing error response from API
         let errorMsg = `HTTP error! Status: ${response.status}`;
-        try {
-            const errBody = await response.json();
-            errorMsg = errBody.message || errorMsg;
-        } catch(parseErr) {
-            // Ignore if error response isn't JSON
-        }
+        try { const errBody = await response.json(); errorMsg = errBody.message || errorMsg; } catch(parseErr) {}
         throw new Error(errorMsg);
       }
       const data = await response.json();
-      // Ensure data is an array before setting state
       setTransactions(Array.isArray(data) ? data : []);
     } catch (e) {
       setError(`Failed to fetch transaction history: ${e.message}`);
@@ -75,57 +61,63 @@ function TransactionHistory({ walletId, apiUrl }) {
   // Function to determine text color based on transaction type
   const getAmountColor = (type) => {
     if (type === 'CREDIT' || type === 'LOAN_IN') return 'text-accent-green-dark';
-    if (type === 'DEBIT' || type === 'PAYMENT_OUT') return 'text-accent-red-dark';
+    if (type === 'DEBIT' || type === 'PAYMENT_OUT' || type === 'SAVINGS_ADD') return 'text-accent-red-dark';
     return 'text-neutral-700';
+  };
+  
+  // Function to determine sign based on transaction type
+  const getAmountSign = (type) => {
+    if (type === 'CREDIT' || type === 'LOAN_IN') return '+';
+    if (type === 'DEBIT' || type === 'PAYMENT_OUT' || type === 'SAVINGS_ADD') return '-';
+    return '';
   };
 
   // Function to get a user-friendly description
   const getDescription = (tx) => {
-    // Get potential names from details, provide fallbacks
+    const goalName = tx.details?.goal_name || 'Savings Goal';
     const merchantName = tx.details?.merchant || 'Merchant';
-    const goalName = tx.details?.goal_name || 'Savings Goal'; // Look for goal_name
-
     switch (tx.type) {
         case 'CREDIT': return 'Deposit';
         case 'DEBIT': return 'Withdrawal';
         case 'LOAN_IN': return `Loan Funded (${(tx.related_id || 'N/A').substring(0, 8)}...)`;
-        // Use merchantName from details
         case 'PAYMENT_OUT': return `Payment to ${merchantName}`;
-        // Use goalName from details
         case 'SAVINGS_ADD': return `Added to ${goalName}`;
         case 'LOAN_REPAYMENT': return 'Loan Repayment';
-        default: return tx.type || 'Transaction'; // Fallback
+        default: return tx.type || 'Transaction';
     }
   };
 
-
-  if (!walletId) return null; // Don't render if no wallet selected
+  if (!walletId) { return null; } // Don't render if no wallet selected
 
   return (
-    <div className="mt-5 pt-4 border-t border-neutral-200"> {/* Use neutral border */}
+    <div className="mt-5 pt-4 border-t border-neutral-200">
       <h4 className="text-md font-semibold text-neutral-700 mb-3">Transaction History</h4>
-    {loading && (
-      <div className="flex justify-center items-center my-2">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-blue"></div>
-      </div>
-    )}
+      
+      {/* --- 4. USE SPINNER COMPONENT (scaled down) --- */}
+      {loading && (
+          <div className="scale-75"> {/* Scale down the spinner */}
+            <Spinner />
+          </div>
+      )}
+      {/* --- END SPINNER --- */}
+      
       {error && <p className="my-2 p-2 bg-accent-red-light border border-accent-red text-accent-red-dark rounded-md text-sm">{error}</p>}
 
-      {!loading && transactions.length === 0 && (
-        <p className="text-center text-neutral-500 my-2 text-sm">No transactions found.</p>
+      {!loading && !error && transactions.length === 0 && (
+        <div className="text-center text-neutral-500 my-4 py-4">
+          <ClipboardDocumentListIcon className="h-10 w-10 mx-auto text-neutral-400" />
+          <p className="mt-2 text-sm text-neutral-500">No transactions found.</p>
+          <p className="text-xs text-neutral-400">Make a deposit or payment to see it here.</p>
+        </div>
       )}
 
-      {!loading && transactions.length > 0 && (
-        <ul className="space-y-2 max-h-60 overflow-y-auto pr-2"> {/* Limit height and add scroll */}
+      {!loading && !error && transactions.length > 0 && (
+        <ul className="space-y-2 max-h-60 overflow-y-auto pr-2">
           {transactions.map((tx) => {
-            // ... (keep existing amountColor, amountSign calculation) ...
-            const isCredit = tx.type === 'CREDIT' || tx.type === 'LOAN_IN' || tx.type === 'SAVINGS_ADD'; // Include SAVINGS_ADD as credit type display
-            const amountColor = isCredit ? 'text-accent-green-dark' : 'text-accent-red-dark';
-            const amountSign = isCredit ? '+' : '-';
-
-            // Check balance type and format
-            const balance_is_goal = tx.details?.balance_is_goal === true
-            const balanceLabel = balance_is_goal ? 'Goal Bal:' : 'Bal:'; // Choose label
+            const amountColor = getAmountColor(tx.type);
+            const amountSign = getAmountSign(tx.type);
+            const balance_is_goal = tx.details?.balance_is_goal === true;
+            const balanceLabel = balance_is_goal ? 'Goal Bal:' : 'Bal:';
             const balanceAfter = (tx.balance_after !== 'N/A' && tx.balance_after !== undefined)
                 ? formatCurrency(tx.balance_after)
                 : 'N/A';
@@ -143,7 +135,6 @@ function TransactionHistory({ walletId, apiUrl }) {
                 {/* Bottom Row: Date and Appropriate Balance */}
                 <div className="flex justify-between items-center text-neutral-500">
                    <span>{formatTimestamp(tx.timestamp)}</span>
-                   {/* Display correct label and balance */}
                    <span>{balanceLabel} {balanceAfter}</span>
                 </div>
               </li>
@@ -151,7 +142,6 @@ function TransactionHistory({ walletId, apiUrl }) {
           })}
         </ul>
       )}
-       {/* Optional: Add a button to view full history */}
     </div>
   );
 }

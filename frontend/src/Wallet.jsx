@@ -156,10 +156,8 @@ function Wallet() {
               </div>
               {/* Transaction History - Pass key from context */}
               <TransactionHistory
-                  key={transactionCount}
-                  walletId={wallet.wallet_id}
-                  apiUrl={apiUrl}
-              />
+                        key={transactionCount} // Keep key to force re-render
+                    />
           </div>
       )}
       {/* Show loading spinner if wallet is loading */}

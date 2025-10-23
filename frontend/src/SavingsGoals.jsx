@@ -5,6 +5,7 @@ import Spinner from './Spinner';
 // Import the context hook and shared helper
 import { useWallet, formatCurrency } from './contexts/WalletContext';
 import ConfirmModal from './ConfirmModal';
+import { BanknotesIcon } from '@heroicons/react/24/outline';
 
 // Remove onGoalFunded prop
 function SavingsGoals() {
@@ -18,11 +19,9 @@ function SavingsGoals() {
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalTarget, setNewGoalTarget] = useState('');
   const [addAmount, setAddAmount] = useState({});
-
-  // --- NEW: State for modal ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [goalToDelete, setGoalToDelete] = useState(null); // Store which goal to delete
-  // ---
+
 
   // --- Fetch goals ---
   useEffect(() => {
@@ -215,13 +214,10 @@ function SavingsGoals() {
     setGoalToDelete(null); // Clear the ID
   };
 
+
   // --- Render Logic ---
   if (!walletId) {
-    return (
-      <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 mt-6 shadow-sm text-neutral-600">
-        <p>Please fetch or create a wallet first to manage savings goals.</p>
-      </div>
-    );
+    return null
   }
 
   return (
@@ -231,8 +227,15 @@ function SavingsGoals() {
       {loading && <Spinner />}
 
       {!loading && goals.length === 0 && (
-        <p className="text-center text-neutral-500 my-4">No savings goals found for this wallet.</p>
+        // --- 5. NEW EMPTY STATE ---
+        <div className="text-center text-neutral-500 my-4 py-8">
+          <BanknotesIcon className="h-12 w-12 mx-auto text-neutral-400" />
+          <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Savings Goals</h3>
+          <p className="mt-1 text-sm text-neutral-500">Get started by adding a new goal below.</p>
+        </div>
+        // --- END EMPTY STATE ---
       )}
+
       {!loading && goals.length > 0 && (
         <ul className="space-y-4 mb-6">
           {goals.map((goal) => {
