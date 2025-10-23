@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import Spinner from './Spinner';
-// Import the context hook and shared helper
+import ConfirmModal from './ConfirmModal';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
 
 // --- Replicate Backend Rate Logic on Frontend ---
@@ -30,6 +30,10 @@ function MicroLoans() {
     const [newLoanAmount, setNewLoanAmount] = useState(String(DEFAULT_LOAN_AMOUNT));
     const [displayRate, setDisplayRate] = useState(calculateDisplayRate(DEFAULT_LOAN_AMOUNT));
     const [repayAmount, setRepayAmount] = useState({});
+
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    // State to hold info for the confirmation modal
+    const [modalAction, setModalAction] = useState(null); // e.g., { action: 'approve', loanId: '...' }
 
     // --- Fetch loans when walletId changes ---
     useEffect(() => {
@@ -105,9 +109,6 @@ function MicroLoans() {
 
     // --- Approve/Reject Loan (Use Toast) ---
     const handleLoanAction = async (loanId, action) => {
-        if (!window.confirm(`Are you sure you want to ${action} this loan?`)) {
-            return;
-        }
         setActionLoading(prev => ({ ...prev, [loanId]: true }));
         await toast.promise(
             fetch(`${apiUrl}/loan/${encodeURIComponent(loanId)}/${action}`, {
@@ -189,6 +190,24 @@ function MicroLoans() {
         setRepayAmount(prev => ({ ...prev, [loanId]: value }));
     };
 
+    const promptLoanAction = (loanId, action) => {
+        setModalAction({ loanId, action }); // Store the action details
+        setIsModalOpen(true); // Open the modal
+    };
+
+    const handleModalClose = () => {
+        setIsModalOpen(false);
+        setModalAction(null); // Clear the action
+    };
+
+    const handleModalConfirm = () => {
+        if (modalAction) {
+            // Call the original function with the stored details
+            handleLoanAction(modalAction.loanId, modalAction.action);
+        }
+        handleModalClose(); // Close the modal
+    };
+
 
     // --- Render Logic ---
     if (!walletId) { return null; }
@@ -221,14 +240,14 @@ function MicroLoans() {
                                     {loan.status === 'PENDING' && (
                                          <div className="flex gap-2">
                                              <button
-                                                 onClick={() => handleLoanAction(loan.loan_id, 'approve')}
+                                                 onClick={() => promptLoanAction(loan.loan_id, 'approve')}
                                                  className="px-2 py-1 bg-accent-green text-white text-xs rounded hover:bg-accent-green-dark disabled:bg-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-500"
                                                  disabled={isLoadingThisAction || loading}
                                                 >
                                                  {isLoadingThisAction ? '...' : 'Approve'}
                                              </button>
                                              <button
-                                                 onClick={() => handleLoanAction(loan.loan_id, 'reject')}
+                                                 onClick={() => promptLoanAction(loan.loan_id, 'reject')}
                                                  className="px-2 py-1 bg-accent-red text-white text-xs rounded hover:bg-accent-red-dark disabled:bg-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-500"
                                                  disabled={isLoadingThisAction || loading}
                                                 >
@@ -309,6 +328,18 @@ function MicroLoans() {
                     </button>
                 </div>
             </form>
+            <ConfirmModal
+                isOpen={isModalOpen}
+                onClose={handleModalClose}
+                onConfirm={handleModalConfirm}
+                // Dynamically set props based on the action
+                title={modalAction?.action === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
+                confirmText={modalAction?.action === 'approve' ? 'Approve' : 'Reject'}
+                confirmVariant={modalAction?.action === 'approve' ? 'primary' : 'danger'}
+            >
+                Are you sure you want to {modalAction?.action} this loan?
+                {modalAction?.action === 'approve' && ' This will fund the user\'s wallet.'}
+            </ConfirmModal>
         </div>
     );
 }

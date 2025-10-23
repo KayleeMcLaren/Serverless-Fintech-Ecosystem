@@ -4,6 +4,7 @@ import GoalTransactionHistory from './GoalTransactionHistory';
 import Spinner from './Spinner';
 // Import the context hook and shared helper
 import { useWallet, formatCurrency } from './contexts/WalletContext';
+import ConfirmModal from './ConfirmModal';
 
 // Remove onGoalFunded prop
 function SavingsGoals() {
@@ -17,6 +18,11 @@ function SavingsGoals() {
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalTarget, setNewGoalTarget] = useState('');
   const [addAmount, setAddAmount] = useState({});
+
+  // --- NEW: State for modal ---
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [goalToDelete, setGoalToDelete] = useState(null); // Store which goal to delete
+  // ---
 
   // --- Fetch goals ---
   useEffect(() => {
@@ -171,6 +177,44 @@ function SavingsGoals() {
     setAddAmount(prev => ({ ...prev, [goalId]: value }));
   };
 
+  // --- MODIFIED: This function now *triggers* the modal ---
+  const promptDeleteGoal = (goalId) => {
+    setGoalToDelete(goalId); // Store the ID
+    setIsModalOpen(true);    // Open the modal
+  };
+
+  // --- NEW: This function holds the *actual* deletion logic ---
+  const executeDeleteGoal = async () => {
+    if (!goalToDelete) return; // Safety check
+
+    const goalId = goalToDelete;
+    setActionLoading(prev => ({ ...prev, [goalId]: true }));
+    setIsModalOpen(false); // Close modal
+
+    await toast.promise(
+        fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}`, {
+            method: 'DELETE',
+        })
+        .then(async(response) => {
+            const responseBody = await response.json();
+            if (!response.ok) {
+                throw new Error(responseBody?.message || `HTTP error! Status: ${response.status}`);
+            }
+            return responseBody;
+        })
+        .then(() => {
+            fetchGoals(); // Refetch goals
+        }),
+        {
+            loading: 'Deleting goal...',
+            success: <b>Goal deleted!</b>,
+            error: (err) => <b>Failed to delete goal: {err.message}</b>,
+        }
+    );
+    setActionLoading(prev => ({ ...prev, [goalId]: false }));
+    setGoalToDelete(null); // Clear the ID
+  };
+
   // --- Render Logic ---
   if (!walletId) {
     return (
@@ -209,7 +253,7 @@ function SavingsGoals() {
                     </span>
                   </div>
                    <button
-                     onClick={() => handleDeleteGoal(goal.goal_id)}
+                     onClick={() => promptDeleteGoal(goal.goal_id)}
                      disabled={loading || isLoadingThisGoalAction}
                      className="px-2 py-1 bg-accent-red text-white text-xs rounded hover:bg-accent-red-dark disabled:bg-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-500 flex-shrink-0"
                    >
@@ -287,6 +331,17 @@ function SavingsGoals() {
           </button>
         </div>
       </form>
+      {/* --- ADD THE MODAL COMPONENT --- */}
+      <ConfirmModal
+        isOpen={isModalOpen}
+        title="Confirm Deletion"
+        onClose={() => setIsModalOpen(false)}
+        onConfirm={executeDeleteGoal}
+        confirmText="Delete"
+        confirmVariant="danger"
+      >
+        Are you sure you want to delete this savings goal? This action cannot be undone.
+      </ConfirmModal>
     </div>
   );
 }
