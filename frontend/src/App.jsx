@@ -5,18 +5,19 @@ import SavingsGoals from './SavingsGoals';
 import MicroLoans from './MicroLoans';
 import PaymentSimulator from './PaymentSimulator';
 import DebtOptimiser from './DebtOptimiser';
+import Dashboard from './Dashboard';
 import TransactionHistory from './TransactionHistory';
 import Spinner from './Spinner';
 import Wallet from './Wallet';
 // Import Icons
 import {
-  WalletIcon, BanknotesIcon, CreditCardIcon, ArrowsRightLeftIcon, ScaleIcon
+  HomeIcon, WalletIcon, BanknotesIcon, CreditCardIcon, ArrowsRightLeftIcon, ScaleIcon
 } from '@heroicons/react/24/outline';
 // Import the context hook and shared helper
 import { useWallet, formatCurrency } from './contexts/WalletContext';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('wallet');
+  const [activeTab, setActiveTab] = useState('dashboard');
   // Error state is now managed *per component* or via toasts
   // We can add a global error here if needed, but let's rely on toasts for now.
   // const [error, setError] = useState(null); 
@@ -54,9 +55,10 @@ function App() {
   // --- Function to render content based on active tab ---
   const renderTabContent = () => {
     switch (activeTab) {
+      case 'dashboard': // --- ADD THIS ---
+      return <Dashboard />;
       case 'wallet':
         return <Wallet />;
-
       case 'savings':
         // No props needed, SavingsGoals will use useWallet()
         return <SavingsGoals />;
@@ -86,6 +88,7 @@ function App() {
       {/* Tab Navigation */}
       <nav className="flex justify-center border-b border-neutral-300 mb-8 space-x-1 sm:space-x-2">
       {[
+        { id: 'dashboard', label: 'Dashboard', Icon: HomeIcon },
         { id: 'wallet', label: 'Wallet', Icon: WalletIcon },
         { id: 'savings', label: 'Savings', Icon: BanknotesIcon },
         { id: 'loans', label: 'Loans', Icon: CreditCardIcon },
@@ -109,9 +112,6 @@ function App() {
 
       {/* Main Content Area */}
       <main>
-        {/* General Error Display (Removed - now handled by toasts) */}
-        {/* {error && <p ...>{error}</p>} */}
-
         {/* Render the content for the active tab */}
         {renderTabContent()}
       </main>
