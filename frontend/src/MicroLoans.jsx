@@ -2,12 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-hot-toast';
 import Spinner from './Spinner';
 import ConfirmModal from './ConfirmModal';
+import LoanDetailsModal from './LoanDetailsModal';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
 import { CurrencyDollarIcon } from '@heroicons/react/24/outline';
 
-
-// --- (calculateDisplayRate - no changes) ---
-// --- NEW: Updated Rate Logic (matches backend) ---
+// --- Rate Logic (matches backend) ---
 const calculateDisplayRate = (term_months) => {
     const numTerm = parseInt(term_months, 10);
     if (isNaN(numTerm)) return '...'; // Default if no term selected
@@ -22,7 +21,7 @@ const calculateDisplayRate = (term_months) => {
 const MIN_LOAN_AMOUNT = 50;
 const MAX_LOAN_AMOUNT = 10000;
 const DEFAULT_LOAN_AMOUNT = 1000;
-const LOAN_TERMS = [12, 24, 36]; // Available loan terms in months
+const LOAN_TERMS = [12, 24, 36];
 // ---
 
 function MicroLoans() {
@@ -33,14 +32,15 @@ function MicroLoans() {
     const [loading, setLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState({});
     const [newLoanAmount, setNewLoanAmount] = useState(String(DEFAULT_LOAN_AMOUNT));
-    const [newLoanTerm, setNewLoanTerm] = useState(''); // Default to empty
-    const [displayRate, setDisplayRate] = useState('...'); // Default to '...'
+    const [newLoanTerm, setNewLoanTerm] = useState('');
+    const [displayRate, setDisplayRate] = useState('...');
     const [repayAmount, setRepayAmount] = useState({});
 
-    // --- State for Admin actions ---
-    const [loanIdToManage, setLoanIdToManage] = useState(''); // <-- This is the variable
+    // --- State for Admin actions/modal ---
+    const [loanIdToManage, setLoanIdToManage] = useState(''); // <-- THIS WAS THE MISSING LINE
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalAction, setModalAction] = useState(null);
+    const [selectedLoan, setSelectedLoan] = useState(null);
     
     const loanAmountSliderRef = useRef(null);
     
@@ -57,7 +57,7 @@ function MicroLoans() {
     // --- Recalculate display rate when term changes ---
     useEffect(() => {
         setDisplayRate(calculateDisplayRate(newLoanTerm));
-    }, [newLoanTerm]); // Dependency is ONLY newLoanTerm
+    }, [newLoanTerm]);
 
     // --- Fetch Loans (Add Toast on Error) ---
     const fetchLoans = async () => {
@@ -81,18 +81,16 @@ function MicroLoans() {
     const handleApplyLoan = async (e) => {
         e.preventDefault();
         const amountNum = parseFloat(newLoanAmount);
-
-        // --- 3. CHANGE: Updated validation check ---
+        
         if (!walletId || !newLoanAmount || amountNum < MIN_LOAN_AMOUNT || amountNum > MAX_LOAN_AMOUNT) {
             toast.error(`Please select a valid loan amount.`);
             return;
         }
-        // --- 4. CHANGE: Added validation for loan term ---
         if (!newLoanTerm) {
             toast.error("Please select a loan term.");
             return;
         }
-
+        
         setLoading(true);
         await toast.promise(
             fetch(`${apiUrl}/loan`, {
@@ -113,7 +111,7 @@ function MicroLoans() {
             })
             .then(() => {
                 setNewLoanAmount(String(DEFAULT_LOAN_AMOUNT));
-                setNewLoanTerm(''); // Reset term to empty
+                setNewLoanTerm('');
                 fetchLoans();
             }),
             {
@@ -234,8 +232,8 @@ function MicroLoans() {
                 <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Micro-Loans</h2>
 
                 {loading && !Object.values(actionLoading).some(Boolean) && <Spinner />}
-
-                {/* --- EMPTY STATE --- */}
+                
+                {/* --- Display Existing Loans --- */}
                 {!loading && loans.length === 0 && (
                     <div className="text-center text-neutral-500 my-4 py-8">
                       <CurrencyDollarIcon className="h-12 w-12 mx-auto text-neutral-400" />
@@ -243,7 +241,6 @@ function MicroLoans() {
                       <p className="mt-1 text-sm text-neutral-500">Apply for a new loan using the form below.</p>
                     </div>
                 )}
-                
                 {!loading && loans.length > 0 && (
                     <div className="space-y-4 mb-6">
                         {loans.map((loan) => {
@@ -259,9 +256,21 @@ function MicroLoans() {
                                         }`}>
                                             {loan.status}
                                         </span>
+                                        <button 
+                                            onClick={() => setSelectedLoan(loan)}
+                                            className="px-2 py-1 bg-neutral-100 text-neutral-700 text-xs rounded hover:bg-neutral-200 border border-neutral-300"
+                                        >
+                                            Details
+                                        </button>
                                     </div>
+
+                                    {loan.status === 'PENDING' && (
+                                         <div className="flex gap-2 mt-2 pt-2 border-t border-neutral-100">
+                                             <p className="text-xs text-neutral-500 italic flex-grow">Use Admin Tools below to approve/reject</p>
+                                         </div>
+                                     )}
                                     
-                                    <p className="text-sm text-neutral-700">
+                                    <p className="text-sm text-neutral-700 mt-2">
                                         Amount: <span className="font-semibold">{formatCurrency(loan.amount)}</span>
                                         {isApproved && ` (Balance: ${formatCurrency(loan.remaining_balance || loan.amount)})`}
                                     </p>
@@ -300,14 +309,11 @@ function MicroLoans() {
                 {/* --- Form to Apply for New Loan --- */}
                 <form onSubmit={handleApplyLoan} className="mt-6 pt-4 border-t border-neutral-200">
                     <h4 className="text-md font-semibold text-neutral-700 mb-4">Apply for New Loan</h4>
-                    
-                    {/* Amount Slider Section */}
                     <div className="mb-4">
                         <div className="flex justify-between items-center mb-1">
                             <label htmlFor="loanAmountSlider" className="text-sm font-medium text-neutral-600">
                                 Loan Amount: <span className="font-bold text-primary-blue">{formatCurrency(newLoanAmount)}</span>
                             </label>
-                            {/* Est. Rate now updates based on term */}
                             <span className="text-sm text-neutral-500">
                                 Est. Rate: <span className="font-semibold">{displayRate}%</span>
                             </span>
@@ -325,19 +331,17 @@ function MicroLoans() {
                             <span>{formatCurrency(MAX_LOAN_AMOUNT)}</span>
                         </div>
                     </div>
-
-                    {/* --- 5. CHANGE: Loan Term Selector Updated --- */}
                     <div className="mb-4">
                         <label htmlFor="loanTerm" className="block text-sm font-medium text-neutral-600 mb-1">Loan Term</label>
                         <select
                             id="loanTerm"
-                            value={newLoanTerm} // Will be '' on init
+                            value={newLoanTerm}
                             onChange={(e) => setNewLoanTerm(e.target.value)}
                             disabled={loading}
                             className={`w-full p-2 border rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 ${
-                                newLoanTerm ? 'border-neutral-300' : 'border-neutral-300 text-neutral-500' // Style placeholder
+                                newLoanTerm ? 'border-neutral-300' : 'border-neutral-300 text-neutral-500'
                             }`}
-                            required // Enforce selection
+                            required
                         >
                             <option value="" disabled>-- Select a Term --</option>
                             {LOAN_TERMS.map(term => (
@@ -345,9 +349,6 @@ function MicroLoans() {
                             ))}
                         </select>
                     </div>
-                    {/* --- End Loan Term Selector --- */}
-
-                    {/* Submit Button */}
                     <div className="text-center mt-5">
                         <button
                             type="submit"
@@ -392,7 +393,7 @@ function MicroLoans() {
                 </div>
             </div>
 
-            {/* --- Modal --- */}
+            {/* --- Confirm Modal --- */}
             <ConfirmModal
                 isOpen={isModalOpen}
                 onClose={handleModalClose}
@@ -404,6 +405,12 @@ function MicroLoans() {
                 Are you sure you want to {modalAction?.action} this loan?
                 {modalAction?.action === 'approve' && ' This will fund the user\'s wallet.'}
             </ConfirmModal>
+            
+            {/* --- Loan Details Modal --- */}
+            <LoanDetailsModal 
+                loan={selectedLoan} 
+                onClose={() => setSelectedLoan(null)} 
+            />
         </> // End React Fragment
     );
 }
