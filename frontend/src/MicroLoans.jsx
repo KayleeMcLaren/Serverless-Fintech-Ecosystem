@@ -234,8 +234,8 @@ function MicroLoans() {
                 <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Micro-Loans</h2>
 
                 {loading && !Object.values(actionLoading).some(Boolean) && <Spinner />}
-                
-                {/* --- Display Existing Loans --- */}
+
+                {/* --- EMPTY STATE --- */}
                 {!loading && loans.length === 0 && (
                     <div className="text-center text-neutral-500 my-4 py-8">
                       <CurrencyDollarIcon className="h-12 w-12 mx-auto text-neutral-400" />
@@ -243,6 +243,7 @@ function MicroLoans() {
                       <p className="mt-1 text-sm text-neutral-500">Apply for a new loan using the form below.</p>
                     </div>
                 )}
+                
                 {!loading && loans.length > 0 && (
                     <div className="space-y-4 mb-6">
                         {loans.map((loan) => {

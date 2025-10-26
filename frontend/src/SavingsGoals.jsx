@@ -1,18 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; // 1. Import useRef
 import { toast } from 'react-hot-toast';
 import GoalTransactionHistory from './GoalTransactionHistory';
 import Spinner from './Spinner';
-// Import the context hook and shared helper
 import { useWallet, formatCurrency } from './contexts/WalletContext';
-import ConfirmModal from './ConfirmModal';
-import { BanknotesIcon } from '@heroicons/react/24/outline';
+import ConfirmModal from './ConfirmModal'; // Import the modal
+import { BanknotesIcon } from '@heroicons/react/24/outline'; // Use BanknotesIcon
 
-// Remove onGoalFunded prop
 function SavingsGoals() {
-  // Get wallet state and functions from context
   const { wallet, apiUrl, refreshWalletAndHistory } = useWallet();
-  const walletId = wallet ? wallet.wallet_id : null; // Get walletId from wallet object
-
+  const walletId = wallet ? wallet.wallet_id : null;
+  
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
@@ -22,6 +19,8 @@ function SavingsGoals() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [goalToDelete, setGoalToDelete] = useState(null); // Store which goal to delete
 
+  // --- Create a ref for the input ---
+  const newGoalNameInputRef = useRef(null);
 
   // --- Fetch goals ---
   useEffect(() => {
@@ -31,7 +30,7 @@ function SavingsGoals() {
       setGoals([]);
     }
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletId]); // Refetch when walletId changes
+  }, [walletId]);
 
   const fetchGoals = async () => {
     if (!walletId) return;
@@ -93,35 +92,7 @@ function SavingsGoals() {
     setLoading(false);
   };
 
-  // --- Delete Goal ---
-  const handleDeleteGoal = async (goalId) => {
-     if (!window.confirm('Are you sure you want to delete this savings goal?')) {
-      return;
-    }
-    setActionLoading(prev => ({ ...prev, [goalId]: true }));
-
-    await toast.promise(
-        fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}`, {
-            method: 'DELETE',
-        })
-        .then(async(response) => {
-            const responseBody = await response.json();
-            if (!response.ok) {
-                throw new Error(responseBody?.message || `HTTP error! Status: ${response.status}`);
-            }
-            return responseBody;
-        })
-        .then(() => {
-            fetchGoals();
-        }),
-        {
-            loading: 'Deleting goal...',
-            success: <b>Goal deleted!</b>,
-            error: (err) => <b>Failed to delete goal: {err.message}</b>,
-        }
-    );
-    setActionLoading(prev => ({ ...prev, [goalId]: false }));
-  };
+  // --- (handleDeleteGoal function removed, replaced by prompt/execute) ---
 
   // --- Add Funds to Goal ---
   const handleAddToGoal = async (goalId) => {
@@ -139,7 +110,7 @@ function SavingsGoals() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              wallet_id: walletId, // Use walletId from context
+              wallet_id: walletId,
               amount: amount,
             }),
         })
@@ -152,14 +123,10 @@ function SavingsGoals() {
         })
         .then(() => {
             setAddAmount(prev => ({ ...prev, [goalId]: '' }));
-            fetchGoals(); // Refetch goals
-
-            // --- Call the refresh function from context ---
+            fetchGoals();
             if (refreshWalletAndHistory) {
                 refreshWalletAndHistory();
             }
-            // ---------------------------------------------
-            
             console.log(`Successfully added funds to goal ${goalId}, triggered parent refresh.`);
         }),
         {
@@ -176,13 +143,13 @@ function SavingsGoals() {
     setAddAmount(prev => ({ ...prev, [goalId]: value }));
   };
 
-  // --- MODIFIED: This function now *triggers* the modal ---
+  // --- Function to trigger the modal ---
   const promptDeleteGoal = (goalId) => {
     setGoalToDelete(goalId); // Store the ID
     setIsModalOpen(true);    // Open the modal
   };
 
-  // --- NEW: This function holds the *actual* deletion logic ---
+  // --- Function that holds the *actual* deletion logic ---
   const executeDeleteGoal = async () => {
     if (!goalToDelete) return; // Safety check
 
@@ -213,11 +180,21 @@ function SavingsGoals() {
     setActionLoading(prev => ({ ...prev, [goalId]: false }));
     setGoalToDelete(null); // Clear the ID
   };
+  
+  // --- Function to focus input ---
+  const handleFocusNewGoalInput = () => {
+    newGoalNameInputRef.current?.focus();
+    newGoalNameInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
 
   // --- Render Logic ---
   if (!walletId) {
-    return null
+    return (
+      <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 mt-6 shadow-sm text-neutral-600">
+        <p>Please fetch or create a wallet first to manage savings goals.</p>
+      </div>
+    );
   }
 
   return (
@@ -227,13 +204,12 @@ function SavingsGoals() {
       {loading && <Spinner />}
 
       {!loading && goals.length === 0 && (
-        // --- 5. NEW EMPTY STATE ---
         <div className="text-center text-neutral-500 my-4 py-8">
           <BanknotesIcon className="h-12 w-12 mx-auto text-neutral-400" />
           <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Savings Goals</h3>
           <p className="mt-1 text-sm text-neutral-500">Get started by adding a new goal below.</p>
+          {/* Removed button */}
         </div>
-        // --- END EMPTY STATE ---
       )}
 
       {!loading && goals.length > 0 && (
@@ -256,7 +232,7 @@ function SavingsGoals() {
                     </span>
                   </div>
                    <button
-                     onClick={() => promptDeleteGoal(goal.goal_id)}
+                     onClick={() => promptDeleteGoal(goal.goal_id)} // Use prompt function
                      disabled={loading || isLoadingThisGoalAction}
                      className="px-2 py-1 bg-accent-red text-white text-xs rounded hover:bg-accent-red-dark disabled:bg-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-500 flex-shrink-0"
                    >
@@ -304,6 +280,7 @@ function SavingsGoals() {
          <h4 className="text-md font-semibold text-neutral-700 mb-3">Add New Goal</h4>
         <div className="flex flex-wrap gap-3 mb-3 items-stretch">
           <input
+            ref={newGoalNameInputRef} // Attach ref
             type="text"
             value={newGoalName}
             onChange={(e) => setNewGoalName(e.target.value)}
@@ -334,11 +311,12 @@ function SavingsGoals() {
           </button>
         </div>
       </form>
-      {/* --- ADD THE MODAL COMPONENT --- */}
+      
+      {/* --- Modal --- */}
       <ConfirmModal
         isOpen={isModalOpen}
         title="Confirm Deletion"
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => setIsModalOpen(false)} // Use anonymous function
         onConfirm={executeDeleteGoal}
         confirmText="Delete"
         confirmVariant="danger"

@@ -276,15 +276,16 @@ function PaymentSimulator() {
             <div>
                 <h4 className="text-md font-semibold text-neutral-700 mb-3">Recent Transactions</h4>
                 {listLoading && <Spinner />} {/* Use Spinner component */}
+
+                {/* --- EMPTY STATE --- */}
                 {!listLoading && transactions.length === 0 && (
-                    // --- 5. NEW EMPTY STATE ---
                     <div className="text-center text-neutral-500 my-4 py-6">
                       <ClipboardDocumentListIcon className="h-10 w-10 mx-auto text-neutral-400" />
                       <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Payment History</h3>
                       <p className="mt-1 text-sm text-neutral-500">Make a payment using the form above to see it here.</p>
                     </div>
-                    // --- END EMPTY STATE ---
                 )}
+
                 {!listLoading && transactions.length > 0 && (
                     <div className="space-y-3 max-h-60 overflow-y-auto pr-2"> {/* Added scroll */}
                         {transactions.map((tx) => (
