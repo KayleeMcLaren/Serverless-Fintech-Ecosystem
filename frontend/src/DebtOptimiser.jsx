@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
 import { BanknotesIcon } from '@heroicons/react/24/outline'; // Icon for empty state
+import WalletPrompt from './WalletPrompt';
 
 
 // --- Custom Tooltip for Charts ---
@@ -223,7 +224,9 @@ function DebtOptimiser() {
   // --- END HELPER ---
 
   // --- Render Logic ---
-  if (!walletId) { return null; }
+  if (!walletId) { 
+    return <WalletPrompt />;
+  }
 
   // Show a loading spinner if still fetching the loans
   if (loansLoading) {

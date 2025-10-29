@@ -5,6 +5,7 @@ import Spinner from './Spinner';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
 import ConfirmModal from './ConfirmModal'; // Import the modal
 import { BanknotesIcon } from '@heroicons/react/24/outline'; // Use BanknotesIcon
+import WalletPrompt from './WalletPrompt';
 
 function SavingsGoals() {
   const { wallet, apiUrl, refreshWalletAndHistory } = useWallet();
@@ -190,11 +191,7 @@ function SavingsGoals() {
 
   // --- Render Logic ---
   if (!walletId) {
-    return (
-      <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-4 mt-6 shadow-sm text-neutral-600">
-        <p>Please fetch or create a wallet first to manage savings goals.</p>
-      </div>
-    );
+    return <WalletPrompt />;
   }
 
   return (
