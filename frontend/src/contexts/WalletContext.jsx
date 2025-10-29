@@ -2,7 +2,7 @@ import React, { createContext, useState, useEffect, useContext, useCallback } fr
 import { toast } from 'react-hot-toast';
 
 // --- Define API URL & Storage Key ---
-const API_URL = 'https://3p79xdboij.execute-api.us-east-1.amazonaws.com/v1';
+const API_URL = import.meta.env.VITE_API_URL;
 const LOCAL_STORAGE_KEY = 'fintechWalletId';
 
 // --- formatCurrency Helper ---
@@ -29,23 +29,19 @@ export const useWallet = () => {
 export function WalletProvider({ children }) {
   const [wallet, setWallet] = useState(null);
   const [loading, setLoading] = useState(false);
-  // We'll let components handle their own errors with toast
-  // const [error, setError] = useState(null); 
   const [walletIdInput, setWalletIdInput] = useState('');
   const [amountInput, setAmountInput] = useState('');
   const [transactionCount, setTransactionCount] = useState(0); // To trigger history refresh
 
   // --- Wallet Action Functions ---
-  // (These are moved from App.jsx)
 
   const handleFetchWallet = useCallback(async (idToFetch, isInitialLoad = false) => {
     const walletId = idToFetch || walletIdInput;
     if (!walletId) {
       toast.error('Please enter a Wallet ID.');
-      return Promise.reject(new Error('No Wallet ID provided')); // Return a rejected promise
+      return Promise.reject(new Error('No Wallet ID provided'));
     }
     setLoading(true);
-    // setError(null);
     if (!isInitialLoad) {
         setWallet(null);
     }
@@ -67,15 +63,14 @@ export function WalletProvider({ children }) {
         }
         console.log('Wallet fetched:', data.wallet_id);
         setTransactionCount(prev => prev + 1);
-        return data; // Return data for toast.promise
+        return data;
     } catch (e) {
-        // setError(`Failed to fetch wallet: ${e.message}`);
         setWallet(null);
-        throw e; // Re-throw for toast.promise to catch
+        throw e;
     } finally {
         setLoading(false);
     }
-  }, [walletIdInput, wallet]); // Add dependencies
+  }, [walletIdInput, wallet]); // Dependencies are correct
 
   // Auto-fetch wallet on initial load
   useEffect(() => {
@@ -83,23 +78,27 @@ export function WalletProvider({ children }) {
     if (savedWalletId) {
       console.log('Found saved wallet ID:', savedWalletId);
       setWalletIdInput(savedWalletId);
-      // Call fetch without toast
       handleFetchWallet(savedWalletId, true).catch(err => {
           console.error("Auto-fetch failed:", err.message);
-          localStorage.removeItem(LOCAL_STORAGE_KEY); // Clear bad ID
+          localStorage.removeItem(LOCAL_STORAGE_KEY);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run only once on mount
 
+  // --- THIS FUNCTION IS NOW CORRECT ---
   const handleCreateWallet = async () => {
     setLoading(true);
-    // setError(null);
     setWallet(null);
     await toast.promise(
       fetch(`${API_URL}/wallet`, { method: 'POST' })
         .then(async (response) => {
-          if (!response.ok) { /* ... error handling ... */ throw new Error(/*...*/); }
+          if (!response.ok) {
+            // Correct error handling
+            let errorMsg = `HTTP error! Status: ${response.status}`;
+            try { const errData = await response.json(); errorMsg = errData.message || errorMsg; } catch (e) {}
+            throw new Error(errorMsg);
+          }
           return response.json();
         })
         .then((data) => {
@@ -109,33 +108,34 @@ export function WalletProvider({ children }) {
           setTransactionCount(prev => prev + 1);
           console.log('Wallet created and ID saved:', data.wallet.wallet_id);
         }),
-      { /* ... toast promise options ... */ }
+      // Correct toast options
+      {
+        loading: 'Creating wallet...',
+        success: <b>Wallet created!</b>,
+        error: (err) => <b>Failed to create wallet: {err.message}</b>,
+      }
     );
     setLoading(false);
   };
   
   // Refresh function that child components can call
-  // --- NEW: Function to refresh wallet balance AND trigger history refresh ---
-  const refreshWalletAndHistory = () => {
+  const refreshWalletAndHistory = useCallback(() => {
       console.log("Refreshing wallet balance and transaction history...");
-      // Use walletIdInput, which is reliably set from state
       if (walletIdInput) {
           handleFetchWallet(walletIdInput, true).catch(err => {
-              // If the refresh fetch fails, show a toast
               console.error("Wallet refresh failed:", err.message);
               toast.error(`Wallet refresh failed: ${err.message}`);
           });
-          // Always update the transaction count to refetch history
           setTransactionCount(prev => prev + 1);
       } else {
           console.log("Refresh skipped, no wallet ID input.");
       }
-  };
+  }, [walletIdInput, handleFetchWallet]); // Added handleFetchWallet to dependencies
 
+  // handleTransaction function (is correct)
   const handleTransaction = async (type) => {
     const amount = parseFloat(String(amountInput).trim());
     setLoading(true);
-    // setError(null);
 
     await toast.promise(
        fetch(
@@ -177,7 +177,6 @@ export function WalletProvider({ children }) {
     amountInput,
     setAmountInput,
     loading,
-    // error, // We're using toasts for errors now
     transactionCount,
     handleCreateWallet,
     handleFetchWallet, // Provide the silent fetch

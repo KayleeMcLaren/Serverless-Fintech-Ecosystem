@@ -3,10 +3,32 @@ import os
 import boto3
 from decimal import Decimal
 from urllib.parse import unquote
+from botocore.exceptions import ClientError
 
+# --- Table Name & CORS Origin ---
 TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME')
+ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*") # Get CORS origin
+
+# --- DynamoDB Resource ---
 dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table(TABLE_NAME)
+if not TABLE_NAME:
+    print("ERROR: DYNAMODB_TABLE_NAME environment variable not set.")
+    table = None
+else:
+    table = dynamodb.Table(TABLE_NAME)
+
+# --- CORS Headers ---
+OPTIONS_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+    "Access-Control-Allow-Methods": "GET, OPTIONS", # Allow GET
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Credentials": True
+}
+GET_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+    "Access-Control-Allow-Credentials": True
+}
+# --- End CORS ---
 
 class DecimalEncoder(json.JSONEncoder):
     """Helper class to convert a DynamoDB item to JSON."""
@@ -17,25 +39,55 @@ class DecimalEncoder(json.JSONEncoder):
 
 def get_loan(event, context):
     """Retrieves a specific loan by its loan_id."""
-    try:
-        loan_id = unquote(event['pathParameters']['loan_id']).strip()
 
-        response = table.get_item(Key={'loan_id': loan_id})
-        item = response.get('Item')
-
-        if not item:
-            return {
-                "statusCode": 404,
-                "body": json.dumps({"message": "Loan not found."})
-            }
-
+    # --- 1. ADD CORS Preflight Check ---
+    http_method = event.get('httpMethod', '').upper()
+    if http_method == 'OPTIONS':
+        print("Handling OPTIONS request for get_loan")
         return {
             "statusCode": 200,
-            "body": json.dumps(item, cls=DecimalEncoder)
+            "headers": OPTIONS_CORS_HEADERS,
+            "body": ""
         }
-    except Exception as e:
-        print(f"Error: {e}")
+    # --- End Preflight Check ---
+    
+    if not table:
+        print("ERROR: Table resource is not initialized.")
+        return { "statusCode": 500, "headers": GET_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error."}) }
+
+    if http_method == 'GET':
+        try:
+            loan_id = unquote(event['pathParameters']['loan_id']).strip()
+            print(f"Fetching loan: {loan_id}")
+
+            response = table.get_item(Key={'loan_id': loan_id})
+            item = response.get('Item')
+
+            if not item:
+                return {
+                    "statusCode": 404,
+                    "headers": GET_CORS_HEADERS, # --- 2. USE CORS Variable ---
+                    "body": json.dumps({"message": "Loan not found."})
+                }
+
+            return {
+                "statusCode": 200,
+                "headers": GET_CORS_HEADERS, # --- 2. USE CORS Variable ---
+                "body": json.dumps(item, cls=DecimalEncoder)
+            }
+        except ClientError as ce:
+             print(f"DynamoDB Error: {ce}")
+             return { "statusCode": 500, "headers": GET_CORS_HEADERS, "body": json.dumps({"message": "Database error.", "error": str(ce)}) }
+        except Exception as e:
+            print(f"Error: {e}")
+            return {
+                "statusCode": 500,
+                "headers": GET_CORS_HEADERS, # --- 2. USE CORS Variable ---
+                "body": json.dumps({"message": "Failed to retrieve loan.", "error": str(e)})
+            }
+    else:
         return {
-            "statusCode": 500,
-            "body": json.dumps({"message": "Failed to retrieve loan.", "error": str(e)})
+            "statusCode": 405,
+            "headers": GET_CORS_HEADERS,
+            "body": json.dumps({"message": f"Method {http_method} not allowed."})
         }

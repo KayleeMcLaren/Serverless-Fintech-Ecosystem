@@ -8,6 +8,7 @@ output "api_gateway_config_hash" {
     aws_api_gateway_method.request_payment_options_method,
     aws_api_gateway_integration.request_payment_options_integration,
     aws_api_gateway_method_response.request_payment_options_200,
+    aws_api_gateway_integration_response.request_payment_options_integration_response,
 
     # GET /payment/{transaction_id}
     aws_api_gateway_resource.transaction_id_resource,
@@ -16,7 +17,8 @@ output "api_gateway_config_hash" {
     aws_api_gateway_method.get_transaction_status_options_method,
     aws_api_gateway_integration.get_transaction_status_options_integration,
     aws_api_gateway_method_response.get_transaction_status_options_200,
-
+    aws_api_gateway_integration_response.get_transaction_status_options_integration_response,
+    
     # GET /payment/by-wallet/{wallet_id}
     aws_api_gateway_resource.payment_by_wallet_resource,
     aws_api_gateway_resource.payment_by_wallet_id_resource,
@@ -25,5 +27,6 @@ output "api_gateway_config_hash" {
     aws_api_gateway_method.get_payments_by_wallet_options_method,
     aws_api_gateway_integration.get_payments_by_wallet_options_integration,
     aws_api_gateway_method_response.get_payments_by_wallet_options_200,
+    aws_api_gateway_integration_response.get_payments_by_wallet_options_integration_response,
   ]))
 }

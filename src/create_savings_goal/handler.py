@@ -7,7 +7,7 @@ from decimal import Decimal
 from botocore.exceptions import ClientError # Import ClientError
 
 # --- CORS Configuration ---
-ALLOWED_ORIGIN = "*"
+ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
 OPTIONS_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "POST, OPTIONS", # Allow POST for creation

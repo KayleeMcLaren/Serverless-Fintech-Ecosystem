@@ -7,7 +7,7 @@ from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 
 # --- CORS Configuration ---
-ALLOWED_ORIGIN = "*"
+ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
 OPTIONS_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "GET, OPTIONS",

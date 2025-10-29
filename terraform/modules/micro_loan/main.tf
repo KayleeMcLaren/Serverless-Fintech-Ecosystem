@@ -3,7 +3,7 @@ locals {
   cors_headers = {
     "Access-Control-Allow-Headers" = "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
     "Access-Control-Allow-Methods" = "OPTIONS,GET,POST,DELETE", # General list
-    "Access-Control-Allow-Origin"  = "*", # Use variable or specific origin for prod
+    "Access-Control-Allow-Origin"  = var.frontend_cors_origin, # Use variable
     "Access-Control-Allow-Credentials" = "true"
   }
 }
@@ -47,7 +47,7 @@ data "aws_iam_policy_document" "dynamodb_loans_table_policy_doc" {
   }
   statement {
     sid       = "TransactionLogWriteAccess"
-    actions   = ["dynamodb:PutItem"]
+    actions   = ["dynamodb:PutItem"] # For logging repayments
     resources = [var.transactions_log_table_arn]
   }
 }
@@ -61,6 +61,7 @@ resource "aws_iam_role_policy_attachment" "dynamodb_loans_table_attachment" {
 }
 
 # --- IAM: SNS Publish Policies ---
+# Policy for loan_events topic
 data "aws_iam_policy_document" "sns_loan_publish_policy_doc" {
   statement {
     actions   = ["sns:Publish"]
@@ -76,6 +77,7 @@ resource "aws_iam_role_policy_attachment" "sns_loan_publish_attachment" {
   policy_arn = aws_iam_policy.sns_loan_publish_policy.arn
 }
 
+# Policy for payment_events topic
 data "aws_iam_policy_document" "sns_payment_publish_policy_doc" {
   statement {
     actions   = ["sns:Publish"]
@@ -112,6 +114,8 @@ resource "aws_lambda_function" "apply_for_loan_lambda" {
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      CORS_ORIGIN         = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -133,6 +137,8 @@ resource "aws_lambda_function" "get_loan_lambda" {
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      CORS_ORIGIN         = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -154,6 +160,8 @@ resource "aws_lambda_function" "get_loans_by_wallet_lambda" {
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      CORS_ORIGIN         = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -176,6 +184,8 @@ resource "aws_lambda_function" "approve_loan_lambda" {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
       SNS_TOPIC_ARN       = var.sns_topic_arn
+      CORS_ORIGIN         = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -197,6 +207,8 @@ resource "aws_lambda_function" "reject_loan_lambda" {
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      CORS_ORIGIN         = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -219,6 +231,8 @@ resource "aws_lambda_function" "repay_loan_lambda" {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
       SNS_TOPIC_ARN       = var.payment_sns_topic_arn # Publishes to payment_events
+      CORS_ORIGIN         = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }

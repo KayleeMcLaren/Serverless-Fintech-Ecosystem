@@ -9,19 +9,6 @@ from botocore.exceptions import ClientError
 LOANS_TABLE_NAME = os.environ.get('LOANS_TABLE_NAME') # This is actually the TRANSACTIONS table
 LOG_TABLE_NAME = os.environ.get('TRANSACTIONS_LOG_TABLE_NAME') # This is not used here
 
-# --- Self-Correction: Fix Environment Variable Name ---
-# The Terraform for this Lambda passes DYNAMODB_TABLE_NAME, not LOANS_TABLE_NAME
-# Let's check the Terraform block:
-# resource "aws_lambda_function" "update_transaction_status_lambda" {
-#   ...
-#   environment {
-#     variables = {
-#       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
-#     }
-#   }
-# }
-# OK, the code should be reading DYNAMODB_TABLE_NAME
-# Let's fix the handler to read the correct variable.
 
 TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME') # Correct variable name
 

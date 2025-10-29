@@ -1,3 +1,13 @@
+locals {
+  # Reusable CORS headers for MOCK integrations
+  cors_headers = {
+    "Access-Control-Allow-Headers" = "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Methods" = "OPTIONS,GET,POST,DELETE", # General list
+    "Access-Control-Allow-Origin"  = var.frontend_cors_origin, # Use variable
+    "Access-Control-Allow-Credentials" = "true"
+  }
+}
+
 # --- IAM ---
 data "aws_iam_policy_document" "lambda_assume_role_policy" {
   statement {
@@ -23,7 +33,7 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
 # Policy for DynamoDB (Query only)
 data "aws_iam_policy_document" "dynamodb_loans_table_policy_doc" {
   statement {
-    actions = [ "dynamodb:Query" ] # Read-only permission
+    actions = ["dynamodb:Query"] # Read-only permission
     resources = [
       var.loans_table_arn,
       "${var.loans_table_arn}/index/*" # Permission to query the GSI
@@ -59,9 +69,9 @@ resource "aws_lambda_function" "calculate_repayment_plan_lambda" {
   tags             = var.tags
   environment {
     variables = {
-      # The table name is passed in via the 'loans_table_arn' var,
-      # but we need to extract just the name.
-      LOANS_TABLE_NAME = split("/", var.loans_table_arn)[1]
+      LOANS_TABLE_NAME = split("/", var.loans_table_arn)[1] # Get table name from ARN
+      CORS_ORIGIN      = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -92,9 +102,18 @@ resource "aws_api_gateway_integration" "calculate_repayment_plan_integration" {
 # --- API: OPTIONS /debt-optimiser (CORS Preflight for POST) ---
 resource "aws_api_gateway_method" "calculate_repayment_plan_options_method" {
   rest_api_id   = var.api_gateway_id
-  resource_id   = aws_api_gateway_resource.debt_optimiser_resource.id # On the /debt-optimiser resource
+  resource_id   = aws_api_gateway_resource.debt_optimiser_resource.id
   http_method   = "OPTIONS"
   authorization = "NONE"
+}
+
+resource "aws_api_gateway_method_response" "calculate_repayment_plan_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.debt_optimiser_resource.id
+   http_method   = aws_api_gateway_method.calculate_repayment_plan_options_method.http_method
+   status_code   = "200"
+   response_models = { "application/json" = "Empty" }
+   response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => true }
 }
 
 resource "aws_api_gateway_integration" "calculate_repayment_plan_options_integration" {
@@ -107,38 +126,13 @@ resource "aws_api_gateway_integration" "calculate_repayment_plan_options_integra
   }
 }
 
-resource "aws_api_gateway_method_response" "calculate_repayment_plan_options_200" {
-   rest_api_id   = var.api_gateway_id
-   resource_id   = aws_api_gateway_resource.debt_optimiser_resource.id
-   http_method   = aws_api_gateway_method.calculate_repayment_plan_options_method.http_method
-   status_code   = "200"
-   response_models = {
-     "application/json" = "Empty"
-   }
-   response_parameters = {
-     "method.response.header.Access-Control-Allow-Headers" = true,
-     "method.response.header.Access-Control-Allow-Methods" = true,
-     "method.response.header.Access-Control-Allow-Origin" = true,
-     "method.response.header.Access-Control-Allow-Credentials" = true
-   }
-}
-
 resource "aws_api_gateway_integration_response" "calculate_repayment_plan_options_integration_response" {
   rest_api_id = var.api_gateway_id
   resource_id = aws_api_gateway_resource.debt_optimiser_resource.id
   http_method = aws_api_gateway_method.calculate_repayment_plan_options_method.http_method
   status_code = aws_api_gateway_method_response.calculate_repayment_plan_options_200.status_code
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
-    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'", # Allow POST and OPTIONS
-    "method.response.header.Access-Control-Allow-Origin"  = "'*'", # Use '*' for dev
-    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
-  }
-
-  response_templates = {
-    "application/json" = ""
-  }
+  response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => "'${v}'" }
+  response_templates = { "application/json" = "" }
   depends_on = [aws_api_gateway_integration.calculate_repayment_plan_options_integration]
 }
 

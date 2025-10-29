@@ -1,3 +1,13 @@
+locals {
+  # Reusable CORS headers for MOCK integrations
+  cors_headers = {
+    "Access-Control-Allow-Headers" = "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Methods" = "OPTIONS,GET,POST,DELETE", # General list
+    "Access-Control-Allow-Origin"  = var.frontend_cors_origin, # Use variable
+    "Access-Control-Allow-Credentials" = "true"
+  }
+}
+
 # --- IAM ---
 data "aws_iam_policy_document" "lambda_assume_role_policy" {
   statement {
@@ -20,18 +30,18 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Policy for DynamoDB (Put and Get)
+# Policy for DynamoDB (Full access to transactions table)
 data "aws_iam_policy_document" "dynamodb_transactions_table_policy_doc" {
   statement {
     actions = [
       "dynamodb:PutItem",
       "dynamodb:GetItem",
       "dynamodb:UpdateItem",
-      "dynamodb:Query"
+      "dynamodb:Query" # Added for get_payments_by_wallet
     ]
     resources = [
       var.dynamodb_table_arn,
-      "${var.dynamodb_table_arn}/index/*"
+      "${var.dynamodb_table_arn}/index/*" # Allow GSI query
     ]
   }
 }
@@ -64,13 +74,16 @@ resource "aws_iam_role_policy_attachment" "sns_publish_attachment" {
   policy_arn = aws_iam_policy.sns_publish_policy.arn
 }
 
+################################################################################
+# --- LAMBDA FUNCTIONS (API) ---
+################################################################################
+
 # --- LAMBDA: REQUEST PAYMENT (API) ---
 data "archive_file" "request_payment_zip" {
   type        = "zip"
   source_dir  = "${path.module}/../../../src/request_payment"
   output_path = "${path.module}/request_payment.zip"
 }
-
 resource "aws_lambda_function" "request_payment_lambda" {
   function_name    = "${var.project_name}-request-payment"
   role             = aws_iam_role.lambda_exec_role.arn
@@ -83,6 +96,8 @@ resource "aws_lambda_function" "request_payment_lambda" {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
       SNS_TOPIC_ARN       = var.sns_topic_arn
+      CORS_ORIGIN         = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -93,7 +108,6 @@ data "archive_file" "get_transaction_status_zip" {
   source_dir  = "${path.module}/../../../src/get_transaction_status"
   output_path = "${path.module}/get_transaction_status.zip"
 }
-
 resource "aws_lambda_function" "get_transaction_status_lambda" {
   function_name    = "${var.project_name}-get-transaction-status"
   role             = aws_iam_role.lambda_exec_role.arn
@@ -105,6 +119,8 @@ resource "aws_lambda_function" "get_transaction_status_lambda" {
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      CORS_ORIGIN         = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -115,13 +131,39 @@ data "archive_file" "get_payments_by_wallet_zip" {
   source_dir  = "${path.module}/../../../src/get_payments_by_wallet"
   output_path = "${path.module}/get_payments_by_wallet.zip"
 }
-
 resource "aws_lambda_function" "get_payments_by_wallet_lambda" {
   function_name    = "${var.project_name}-get-payments-by-wallet"
-  role             = aws_iam_role.lambda_exec_role.arn # Reuses the role
+  role             = aws_iam_role.lambda_exec_role.arn
   filename         = data.archive_file.get_payments_by_wallet_zip.output_path
   source_code_hash = data.archive_file.get_payments_by_wallet_zip.output_base64sha256
   handler          = "handler.get_payments_by_wallet"
+  runtime          = "python3.12"
+  tags             = var.tags
+  environment {
+    variables = {
+      DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      CORS_ORIGIN         = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
+    }
+  }
+}
+
+################################################################################
+# --- LAMBDA FUNCTIONS (EVENT) ---
+################################################################################
+
+# --- LAMBDA: UPDATE TRANSACTION STATUS (SNS SUBSCRIBER) ---
+data "archive_file" "update_transaction_status_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/update_transaction_status"
+  output_path = "${path.module}/update_transaction_status.zip"
+}
+resource "aws_lambda_function" "update_transaction_status_lambda" {
+  function_name    = "${var.project_name}-update-transaction-status"
+  role             = aws_iam_role.lambda_exec_role.arn
+  filename         = data.archive_file.update_transaction_status_zip.output_path
+  source_code_hash = data.archive_file.update_transaction_status_zip.output_base64sha256
+  handler          = "handler.update_transaction_status"
   runtime          = "python3.12"
   tags             = var.tags
   environment {
@@ -131,20 +173,24 @@ resource "aws_lambda_function" "get_payments_by_wallet_lambda" {
   }
 }
 
-# --- API GATEWAY: POST /payment ---
+################################################################################
+# --- API GATEWAY ---
+################################################################################
+
+# --- API: /payment ---
 resource "aws_api_gateway_resource" "payment_resource" {
   rest_api_id = var.api_gateway_id
   parent_id   = var.api_gateway_root_resource_id
   path_part   = "payment"
 }
 
+# --- API: POST /payment ---
 resource "aws_api_gateway_method" "request_payment_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.payment_resource.id
   http_method   = "POST"
   authorization = "NONE"
 }
-
 resource "aws_api_gateway_integration" "request_payment_integration" {
   rest_api_id             = var.api_gateway_id
   resource_id             = aws_api_gateway_resource.payment_resource.id
@@ -154,73 +200,52 @@ resource "aws_api_gateway_integration" "request_payment_integration" {
   uri                     = aws_lambda_function.request_payment_lambda.invoke_arn
 }
 
-# --- API: OPTIONS /payment (CORS Preflight for POST) ---
+# --- API: OPTIONS /payment (CORS) ---
 resource "aws_api_gateway_method" "request_payment_options_method" {
   rest_api_id   = var.api_gateway_id
-  resource_id   = aws_api_gateway_resource.payment_resource.id # On the /payment resource
+  resource_id   = aws_api_gateway_resource.payment_resource.id
   http_method   = "OPTIONS"
   authorization = "NONE"
 }
-
-resource "aws_api_gateway_integration" "request_payment_options_integration" {
-  rest_api_id             = var.api_gateway_id
-  resource_id           = aws_api_gateway_resource.payment_resource.id
-  http_method             = aws_api_gateway_method.request_payment_options_method.http_method
-  type                    = "MOCK"
-  request_templates = {
-    "application/json" = "{\"statusCode\": 200}"
-  }
-}
-
 resource "aws_api_gateway_method_response" "request_payment_options_200" {
    rest_api_id   = var.api_gateway_id
    resource_id   = aws_api_gateway_resource.payment_resource.id
    http_method   = aws_api_gateway_method.request_payment_options_method.http_method
    status_code   = "200"
-   response_models = {
-     "application/json" = "Empty"
-   }
-   response_parameters = {
-     "method.response.header.Access-Control-Allow-Headers" = true,
-     "method.response.header.Access-Control-Allow-Methods" = true,
-     "method.response.header.Access-Control-Allow-Origin" = true,
-     "method.response.header.Access-Control-Allow-Credentials" = true
-   }
+   response_models = { "application/json" = "Empty" }
+   response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => true }
 }
-
+resource "aws_api_gateway_integration" "request_payment_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.payment_resource.id
+  http_method             = aws_api_gateway_method.request_payment_options_method.http_method
+  type                    = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
 resource "aws_api_gateway_integration_response" "request_payment_options_integration_response" {
   rest_api_id = var.api_gateway_id
   resource_id = aws_api_gateway_resource.payment_resource.id
   http_method = aws_api_gateway_method.request_payment_options_method.http_method
   status_code = aws_api_gateway_method_response.request_payment_options_200.status_code
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
-    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'", # Allow POST and OPTIONS
-    "method.response.header.Access-Control-Allow-Origin"  = "'*'", # Use '*' for dev
-    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
-  }
-
-  response_templates = {
-    "application/json" = ""
-  }
+  response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => "'${v}'" }
+  response_templates = { "application/json" = "" }
   depends_on = [aws_api_gateway_integration.request_payment_options_integration]
 }
 
-# --- API GATEWAY: GET /payment/{transaction_id} ---
+# --- API: /payment/{transaction_id} ---
 resource "aws_api_gateway_resource" "transaction_id_resource" {
   rest_api_id = var.api_gateway_id
-  parent_id   = aws_api_gateway_resource.payment_resource.id # Attaches to /payment
+  parent_id   = aws_api_gateway_resource.payment_resource.id
   path_part   = "{transaction_id}"
 }
 
+# --- API: GET /payment/{transaction_id} ---
 resource "aws_api_gateway_method" "get_transaction_status_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.transaction_id_resource.id
   http_method   = "GET"
   authorization = "NONE"
 }
-
 resource "aws_api_gateway_integration" "get_transaction_status_integration" {
   rest_api_id             = var.api_gateway_id
   resource_id             = aws_api_gateway_resource.transaction_id_resource.id
@@ -230,81 +255,57 @@ resource "aws_api_gateway_integration" "get_transaction_status_integration" {
   uri                     = aws_lambda_function.get_transaction_status_lambda.invoke_arn
 }
 
-# --- API: OPTIONS /payment/{transaction_id} (CORS Preflight for GET) ---
-# Although simple GETs don't *usually* need preflight, adding it doesn't hurt
-# and covers cases where custom headers might be added later.
+# --- API: OPTIONS /payment/{transaction_id} (CORS) ---
 resource "aws_api_gateway_method" "get_transaction_status_options_method" {
   rest_api_id   = var.api_gateway_id
-  resource_id   = aws_api_gateway_resource.transaction_id_resource.id # On the /{transaction_id} resource
+  resource_id   = aws_api_gateway_resource.transaction_id_resource.id
   http_method   = "OPTIONS"
   authorization = "NONE"
 }
-
-resource "aws_api_gateway_integration" "get_transaction_status_options_integration" {
-  rest_api_id             = var.api_gateway_id
-  resource_id           = aws_api_gateway_resource.transaction_id_resource.id
-  http_method             = aws_api_gateway_method.get_transaction_status_options_method.http_method
-  type                    = "MOCK"
-  request_templates = {
-    "application/json" = "{\"statusCode\": 200}"
-  }
-}
-
 resource "aws_api_gateway_method_response" "get_transaction_status_options_200" {
    rest_api_id   = var.api_gateway_id
    resource_id   = aws_api_gateway_resource.transaction_id_resource.id
    http_method   = aws_api_gateway_method.get_transaction_status_options_method.http_method
    status_code   = "200"
-   response_models = {
-     "application/json" = "Empty"
-   }
-   response_parameters = {
-     "method.response.header.Access-Control-Allow-Headers" = true,
-     "method.response.header.Access-Control-Allow-Methods" = true,
-     "method.response.header.Access-Control-Allow-Origin" = true,
-     "method.response.header.Access-Control-Allow-Credentials" = true
-   }
+   response_models = { "application/json" = "Empty" }
+   response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => true }
 }
-
+resource "aws_api_gateway_integration" "get_transaction_status_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.transaction_id_resource.id
+  http_method             = aws_api_gateway_method.get_transaction_status_options_method.http_method
+  type                    = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
 resource "aws_api_gateway_integration_response" "get_transaction_status_options_integration_response" {
   rest_api_id = var.api_gateway_id
   resource_id = aws_api_gateway_resource.transaction_id_resource.id
   http_method = aws_api_gateway_method.get_transaction_status_options_method.http_method
   status_code = aws_api_gateway_method_response.get_transaction_status_options_200.status_code
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
-    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'", # Allow GET and OPTIONS
-    "method.response.header.Access-Control-Allow-Origin"  = "'*'",
-    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
-  }
-
-  response_templates = {
-    "application/json" = ""
-  }
+  response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => "'${v}'" }
+  response_templates = { "application/json" = "" }
   depends_on = [aws_api_gateway_integration.get_transaction_status_options_integration]
 }
 
-# --- API GATEWAY: GET /payment/by-wallet/{wallet_id} ---
+# --- API: /payment/by-wallet/{wallet_id} ---
 resource "aws_api_gateway_resource" "payment_by_wallet_resource" {
   rest_api_id = var.api_gateway_id
-  parent_id   = aws_api_gateway_resource.payment_resource.id # Attaches to /payment
+  parent_id   = aws_api_gateway_resource.payment_resource.id
   path_part   = "by-wallet"
 }
-
 resource "aws_api_gateway_resource" "payment_by_wallet_id_resource" {
   rest_api_id = var.api_gateway_id
-  parent_id   = aws_api_gateway_resource.payment_by_wallet_resource.id # Attaches to /payment/by-wallet
+  parent_id   = aws_api_gateway_resource.payment_by_wallet_resource.id
   path_part   = "{wallet_id}"
 }
 
+# --- API: GET /payment/by-wallet/{wallet_id} ---
 resource "aws_api_gateway_method" "get_payments_by_wallet_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
   http_method   = "GET"
   authorization = "NONE"
 }
-
 resource "aws_api_gateway_integration" "get_payments_by_wallet_integration" {
   rest_api_id             = var.api_gateway_id
   resource_id             = aws_api_gateway_resource.payment_by_wallet_id_resource.id
@@ -314,7 +315,42 @@ resource "aws_api_gateway_integration" "get_payments_by_wallet_integration" {
   uri                     = aws_lambda_function.get_payments_by_wallet_lambda.invoke_arn
 }
 
-# --- API PERMISSIONS ---
+# --- API: OPTIONS /payment/by-wallet/{wallet_id} (CORS) ---
+resource "aws_api_gateway_method" "get_payments_by_wallet_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_method_response" "get_payments_by_wallet_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
+   http_method   = aws_api_gateway_method.get_payments_by_wallet_options_method.http_method
+   status_code   = "200"
+   response_models = { "application/json" = "Empty" }
+   response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => true }
+}
+resource "aws_api_gateway_integration" "get_payments_by_wallet_options_integration" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
+  http_method   = aws_api_gateway_method.get_payments_by_wallet_options_method.http_method
+  type          = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+resource "aws_api_gateway_integration_response" "get_payments_by_wallet_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.payment_by_wallet_id_resource.id
+  http_method = aws_api_gateway_method.get_payments_by_wallet_options_method.http_method
+  status_code = aws_api_gateway_method_response.get_payments_by_wallet_options_200.status_code
+  response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => "'${v}'" }
+  response_templates = { "application/json" = "" }
+  depends_on = [aws_api_gateway_integration.get_payments_by_wallet_options_integration]
+}
+
+################################################################################
+# --- LAMBDA PERMISSIONS (API Gateway) ---
+################################################################################
+
 resource "aws_lambda_permission" "api_gateway_request_payment_permission" {
   statement_id  = "AllowAPIGatewayToInvokeRequestPayment"
   action        = "lambda:InvokeFunction"
@@ -331,29 +367,6 @@ resource "aws_lambda_permission" "api_gateway_get_transaction_permission" {
   source_arn    = "${var.api_gateway_execution_arn}/*/*"
 }
 
-# --- LAMBDA: UPDATE TRANSACTION STATUS (SNS SUBSCRIBER) ---
-data "archive_file" "update_transaction_status_zip" {
-  type        = "zip"
-  source_dir  = "${path.module}/../../../src/update_transaction_status"
-  output_path = "${path.module}/update_transaction_status.zip"
-}
-
-resource "aws_lambda_function" "update_transaction_status_lambda" {
-  function_name    = "${var.project_name}-update-transaction-status"
-  role             = aws_iam_role.lambda_exec_role.arn
-  filename         = data.archive_file.update_transaction_status_zip.output_path
-  source_code_hash = data.archive_file.update_transaction_status_zip.output_base64sha256
-  handler          = "handler.update_transaction_status"
-  runtime          = "python3.12"
-  tags             = var.tags
-  environment {
-    variables = {
-      DYNAMODB_TABLE_NAME = var.dynamodb_table_name
-    }
-  }
-}
-
-# --- API PERMISSION: GET PAYMENTS BY WALLET ---
 resource "aws_lambda_permission" "api_gateway_get_payments_by_wallet_permission" {
   statement_id  = "AllowAPIGatewayToInvokeGetPaymentsByWallet"
   action        = "lambda:InvokeFunction"
@@ -362,57 +375,15 @@ resource "aws_lambda_permission" "api_gateway_get_payments_by_wallet_permission"
   source_arn    = "${var.api_gateway_execution_arn}/*/*"
 }
 
-# --- API: OPTIONS /payment/by-wallet/{wallet_id} (CORS Preflight) ---
-resource "aws_api_gateway_method" "get_payments_by_wallet_options_method" {
-  rest_api_id   = var.api_gateway_id
-  resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
-  http_method   = "OPTIONS"
-  authorization = "NONE"
-}
+################################################################################
+# --- SNS SUBSCRIPTIONS & PERMISSIONS ---
+################################################################################
 
-resource "aws_api_gateway_integration" "get_payments_by_wallet_options_integration" {
-  rest_api_id   = var.api_gateway_id
-  resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
-  http_method   = aws_api_gateway_method.get_payments_by_wallet_options_method.http_method
-  type          = "MOCK"
-  request_templates = { "application/json" = "{\"statusCode\": 200}" }
-}
-
-resource "aws_api_gateway_method_response" "get_payments_by_wallet_options_200" {
-   rest_api_id   = var.api_gateway_id
-   resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
-   http_method   = aws_api_gateway_method.get_payments_by_wallet_options_method.http_method
-   status_code   = "200"
-   response_models = { "application/json" = "Empty" }
-   response_parameters = {
-     "method.response.header.Access-Control-Allow-Headers" = true,
-     "method.response.header.Access-Control-Allow-Methods" = true,
-     "method.response.header.Access-Control-Allow-Origin" = true,
-     "method.response.header.Access-Control-Allow-Credentials" = true
-   }
-}
-
-resource "aws_api_gateway_integration_response" "get_payments_by_wallet_options_integration_response" {
-  rest_api_id = var.api_gateway_id
-  resource_id = aws_api_gateway_resource.payment_by_wallet_id_resource.id
-  http_method = aws_api_gateway_method.get_payments_by_wallet_options_method.http_method
-  status_code = aws_api_gateway_method_response.get_payments_by_wallet_options_200.status_code
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
-    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'", # Allow GET
-    "method.response.header.Access-Control-Allow-Origin"  = "'*'",
-    "method.response.header.Access-Control-Allow-Credentials" = "'true'"
-  }
-  response_templates = { "application/json" = "" }
-  depends_on = [aws_api_gateway_integration.get_payments_by_wallet_options_integration]
-}
-
-# --- SNS SUBSCRIPTION & PERMISSION (PAYMENT RESULTS) ---
+# --- SNS: PAYMENT RESULTS (Subscriber) ---
 resource "aws_sns_topic_subscription" "payment_result_subscription" {
   topic_arn = var.sns_topic_arn
   protocol  = "lambda"
   endpoint  = aws_lambda_function.update_transaction_status_lambda.arn
-  # Add a filter policy so this Lambda only gets 'RESULT' events
   filter_policy = jsonencode({
     "event_type": ["PAYMENT_SUCCESSFUL", "PAYMENT_FAILED"]
   })

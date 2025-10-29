@@ -38,7 +38,7 @@ variable "sns_topic_arn" {
   type        = string
 }
 
-variable "payment_sns_topic_arn" { # This is for PAYMENT_EVENTS
+variable "payment_sns_topic_arn" {
   description = "The ARN of the SNS topic for payment events"
   type        = string
 }
@@ -48,5 +48,10 @@ variable "transactions_log_table_name" {
 }
 variable "transactions_log_table_arn" {
   description = "The ARN of the transaction logs DynamoDB table"
+  type        = string
+}
+
+variable "frontend_cors_origin" {
+  description = "The allowed CORS origin for the frontend"
   type        = string
 }

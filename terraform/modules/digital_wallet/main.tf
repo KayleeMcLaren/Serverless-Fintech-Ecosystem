@@ -3,15 +3,12 @@ locals {
   cors_headers = {
     "Access-Control-Allow-Headers" = "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
     "Access-Control-Allow-Methods" = "OPTIONS,GET,POST,DELETE", # General list
-    "Access-Control-Allow-Origin"  = "*", # Use variable or specific origin for prod
+    "Access-Control-Allow-Origin"  = var.frontend_cors_origin, # Use variable
     "Access-Control-Allow-Credentials" = "true"
   }
 }
 
 # --- IAM ---
-# This section defines all permissions for our Lambda functions.
-
-# --- IAM: LAMBDA EXECUTION ROLE ---
 data "aws_iam_policy_document" "lambda_assume_role_policy" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -23,7 +20,7 @@ data "aws_iam_policy_document" "lambda_assume_role_policy" {
 }
 
 resource "aws_iam_role" "lambda_exec_role" {
-  name               = "${var.project_name}-wallet-lambda-role"
+  name               = "${var.project_name}-wallet-lambda-role" # Correct role name
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role_policy.json
   tags               = var.tags
 }
@@ -33,11 +30,11 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# --- IAM: DYNAMODB POLICY ---
+# --- IAM: DynamoDB Policy ---
 data "aws_iam_policy_document" "dynamodb_wallet_table_policy_doc" {
   # Statement 1: Permissions for wallet_table
   statement {
-    sid = "WalletTableAccess"
+    sid       = "WalletTableAccess"
     actions   = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem"]
     resources = [var.dynamodb_table_arn]
   }
@@ -105,6 +102,8 @@ resource "aws_lambda_function" "create_wallet_lambda" {
     variables = {
       DYNAMODB_TABLE_NAME           = var.dynamodb_table_name
       TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
+      CORS_ORIGIN                   = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -126,6 +125,8 @@ resource "aws_lambda_function" "get_wallet_lambda" {
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      CORS_ORIGIN         = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -148,6 +149,8 @@ resource "aws_lambda_function" "credit_wallet_lambda" {
     variables = {
       DYNAMODB_TABLE_NAME           = var.dynamodb_table_name
       TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
+      CORS_ORIGIN                   = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -170,6 +173,8 @@ resource "aws_lambda_function" "debit_wallet_lambda" {
     variables = {
       DYNAMODB_TABLE_NAME           = var.dynamodb_table_name
       TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
+      CORS_ORIGIN                   = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -191,6 +196,8 @@ resource "aws_lambda_function" "get_wallet_transactions_lambda" {
   environment {
     variables = {
       TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
+      CORS_ORIGIN                   = var.frontend_cors_origin
+      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -239,7 +246,7 @@ resource "aws_lambda_function" "process_payment_request_lambda" {
     variables = {
       DYNAMODB_TABLE_NAME           = var.dynamodb_table_name
       TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
-      SNS_TOPIC_ARN                 = var.payment_sns_topic_arn # The payment topic
+      SNS_TOPIC_ARN                 = var.payment_sns_topic_arn
     }
   }
 }
@@ -579,7 +586,6 @@ resource "aws_sns_topic_subscription" "loan_approval_subscription" {
   topic_arn = var.sns_topic_arn # loan_events topic
   protocol  = "lambda"
   endpoint  = aws_lambda_function.process_loan_approval_lambda.arn
-  # No filter policy needed, as this is the only subscriber to this topic (for now)
 }
 resource "aws_lambda_permission" "sns_invoke_permission" {
   statement_id  = "AllowSNSInvokeLoanApproval"

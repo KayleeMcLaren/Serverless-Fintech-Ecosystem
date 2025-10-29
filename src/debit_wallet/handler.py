@@ -17,7 +17,7 @@ table = dynamodb_resource.Table(TABLE_NAME)
 log_table = dynamodb_resource.Table(LOG_TABLE_NAME) if LOG_TABLE_NAME else None
 
 # --- CORS Configuration ---
-ALLOWED_ORIGIN = "*"
+ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
 OPTIONS_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
