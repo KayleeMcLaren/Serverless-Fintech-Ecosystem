@@ -77,11 +77,12 @@ function TransactionHistory() {
     const goalName = tx.details?.goal_name || 'Savings Goal';
     const merchantName = tx.details?.merchant || 'Merchant';
     switch (tx.type) {
+      case 'WALLET_CREATED': return 'Wallet Created';
         case 'CREDIT': return 'Deposit';
         case 'DEBIT': return 'Withdrawal';
         case 'LOAN_IN': return `Loan Funded (${(tx.related_id || 'N/A').substring(0, 8)}...)`;
         case 'PAYMENT_OUT': return `Payment to ${merchantName}`;
-        case 'SAVINGS_ADD': return `Added to ${goalName}`;
+        case 'SAVINGS_ADD': return `Added to ${goalName} Savings Fund`;
         case 'LOAN_REPAYMENT': return 'Loan Repayment';
         default: return tx.type || 'Transaction';
     }

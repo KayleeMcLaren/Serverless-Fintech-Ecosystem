@@ -5,6 +5,7 @@ import ConfirmModal from './ConfirmModal';
 import LoanDetailsModal from './LoanDetailsModal';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
 import { CurrencyDollarIcon } from '@heroicons/react/24/outline';
+import WalletPrompt from './WalletPrompt';
 
 // --- Rate Logic (matches backend) ---
 const calculateDisplayRate = (term_months) => {
@@ -224,7 +225,9 @@ function MicroLoans() {
     };
 
     // --- Render Logic ---
-    if (!walletId) { return null; }
+    if (!walletId) {
+        return <WalletPrompt />;
+    }
 
     return (
         <> {/* Use React Fragment */}

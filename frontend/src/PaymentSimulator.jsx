@@ -4,6 +4,7 @@ import Spinner from './Spinner';
 // Import the context hook and shared helper
 import { useWallet, formatCurrency } from './contexts/WalletContext';
 import { ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
+import WalletPrompt from './WalletPrompt';
 
 function PaymentSimulator() {
     // Get wallet state and functions from context
@@ -196,7 +197,7 @@ function PaymentSimulator() {
 
     // --- Render Logic ---
     if (!walletId) {
-        return null;
+        return <WalletPrompt />;
     }
 
     return (
