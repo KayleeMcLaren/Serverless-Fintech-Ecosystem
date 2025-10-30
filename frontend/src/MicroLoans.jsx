@@ -257,7 +257,7 @@ function MicroLoans() {
                 }
                 return responseBody;
             })
-            .then(() => {
+            .then((responseBody) => { // <-- 1. Get the responseBody
                 setRepayAmount(prev => ({ ...prev, [loanId]: '' }));
                 setTimeout(() => {
                     fetchLoans();
@@ -265,10 +265,12 @@ function MicroLoans() {
                         refreshWalletAndHistory();
                     }
                 }, 4000);
+                return responseBody; // <-- 2. Pass it to the success toast
             }),
             {
                 loading: 'Processing repayment...',
-                success: <b>Repayment request submitted!</b>,
+                // 3. Use the 'amount_processed' from the response body
+                success: (responseBody) => <b>Repayment of {formatCurrency(responseBody.amount_processed)} submitted!</b>,
                 error: (err) => <b>Repayment failed: {err.message}</b>,
             }
         );
