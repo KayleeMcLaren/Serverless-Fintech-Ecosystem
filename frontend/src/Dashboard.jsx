@@ -3,6 +3,7 @@ import { useWallet, formatCurrency } from './contexts/WalletContext';
 import Spinner from './Spinner';
 import { toast } from 'react-hot-toast';
 import { BanknotesIcon, CreditCardIcon } from '@heroicons/react/24/outline';
+import WalletPrompt from './WalletPrompt';
 
 function Dashboard() {
   // Get wallet and API URL from context
@@ -72,12 +73,7 @@ function Dashboard() {
   }
   
   if (!walletId) {
-     return (
-       <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mt-8 shadow-sm text-center">
-         <h2 className="text-xl font-semibold text-neutral-700 mb-4">Welcome!</h2>
-         <p className="text-neutral-500">Please load or create a wallet to view your dashboard.</p>
-       </div>
-     );
+     return <WalletPrompt />;
   }
 
   // Main dashboard display

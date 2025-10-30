@@ -15,6 +15,7 @@ output "api_gateway_config_hash" {
     aws_api_gateway_resource.savings_by_wallet_id_resource,
     aws_api_gateway_method.get_savings_goals_method,
     aws_api_gateway_integration.get_savings_goals_integration,
+    # (No OPTIONS for this simple GET)
 
     # /savings-goal/{goal_id}
     aws_api_gateway_resource.savings_goal_id_resource,

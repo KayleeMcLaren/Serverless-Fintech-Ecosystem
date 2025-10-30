@@ -171,6 +171,9 @@ function SavingsGoals() {
         })
         .then(() => {
             fetchGoals(); // Refetch goals
+            if (refreshWalletAndHistory) {
+                refreshWalletAndHistory();
+            }
         }),
         {
             loading: 'Deleting goal...',

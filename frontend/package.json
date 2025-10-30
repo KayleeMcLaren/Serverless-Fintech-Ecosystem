@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-  "dev": "vite",
-  "build": "vite build", 
-  "lint": "eslint .",
-  "preview": "vite preview"
+    "dev": "vite",
+    "build": "vite build --mode production",
+    "build:stg": "vite build --mode staging",
+    "build:prd": "vite build --mode production",
+    "lint": "eslint .",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

@@ -47,10 +47,13 @@ data "aws_iam_policy_document" "dynamodb_savings_table_policy_doc" {
       "${var.dynamodb_table_arn}/index/*"
     ]
   }
-  # Statement 2: Permissions for the wallets_table (for transactions)
+  # Statement 2: Permissions for the wallets_table (for transactions AND reading)
   statement {
-    sid       = "WalletsTableTxAccess"
-    actions   = ["dynamodb:UpdateItem"] # For the transact_write_items
+    sid = "WalletsTableTxAccess"
+    actions = [
+      "dynamodb:UpdateItem", # For the transaction
+      "dynamodb:GetItem"     # <-- ADD THIS LINE (for reading the new balance)
+    ]
     resources = [var.wallets_table_arn]
   }
   # Statement 3: Permissions for writing to the transaction log table
@@ -146,8 +149,11 @@ resource "aws_lambda_function" "delete_savings_goal_lambda" {
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      WALLETS_TABLE_NAME          = var.wallets_table_name
+      TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
       CORS_ORIGIN         = var.frontend_cors_origin
       REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
+      
     }
   }
 }
