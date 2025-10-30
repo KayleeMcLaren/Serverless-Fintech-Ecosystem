@@ -60,13 +60,13 @@ function TransactionHistory() {
 
   // Function to determine text color based on transaction type
   const getAmountColor = (type) => {
-    if (type === 'CREDIT' || type === 'LOAN_IN' || type === 'WALLET_CREATED' || type === 'SAVINGS_REFUND') return 'text-accent-green-dark'; // <-- ADD REFUND
+    if (type === 'CREDIT' || type === 'LOAN_IN' || type === 'WALLET_CREATED' || type === 'SAVINGS_REFUND' || type === 'SAVINGS_REDEEM') return 'text-accent-green-dark';
     if (type === 'DEBIT' || type === 'PAYMENT_OUT' || type === 'SAVINGS_ADD') return 'text-accent-red-dark';
     return 'text-neutral-700';
   };
   
   const getAmountSign = (type) => {
-    if (type === 'CREDIT' || type === 'LOAN_IN' || type === 'WALLET_CREATED' || type === 'SAVINGS_REFUND') return '+'; // <-- ADD REFUND
+    if (type === 'CREDIT' || type === 'LOAN_IN' || type === 'WALLET_CREATED' || type === 'SAVINGS_REFUND' || type === 'SAVINGS_REDEEM') return '+'; 
     if (type === 'DEBIT' || type === 'PAYMENT_OUT' || type === 'SAVINGS_ADD') return '-';
     return '';
   };
@@ -84,6 +84,7 @@ function TransactionHistory() {
         case 'SAVINGS_ADD': return `Added to ${goalName} Savings Fund`;
         case 'LOAN_REPAYMENT': return 'Loan Repayment';
         case 'SAVINGS_REFUND': return 'Savings Goal Refund';
+        case 'SAVINGS_REDEEM': return 'Savings Goal Redeemed';
         default: return tx.type || 'Transaction';
     }
   };

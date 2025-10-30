@@ -4,7 +4,7 @@ import GoalTransactionHistory from './GoalTransactionHistory';
 import Spinner from './Spinner';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
 import ConfirmModal from './ConfirmModal'; // Import the modal
-import { BanknotesIcon } from '@heroicons/react/24/outline'; // Use BanknotesIcon
+import { BanknotesIcon, CheckCircleIcon } from '@heroicons/react/24/outline'; // Use BanknotesIcon
 import WalletPrompt from './WalletPrompt';
 
 function SavingsGoals() {
@@ -18,7 +18,14 @@ function SavingsGoals() {
   const [newGoalTarget, setNewGoalTarget] = useState('');
   const [addAmount, setAddAmount] = useState({});
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [goalToDelete, setGoalToDelete] = useState(null); // Store which goal to delete
+
+  // State for Delete Modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [goalToDelete, setGoalToDelete] = useState(null);
+
+  // --- NEW: State for Redeem Modal ---
+  const [isRedeemModalOpen, setIsRedeemModalOpen] = useState(false);
+  const [goalToRedeem, setGoalToRedeem] = useState(null);
 
   // --- Create a ref for the input ---
   const newGoalNameInputRef = useRef(null);
@@ -93,7 +100,44 @@ function SavingsGoals() {
     setLoading(false);
   };
 
-  // --- (handleDeleteGoal function removed, replaced by prompt/execute) ---
+  // Helper to update amount state
+  const handleAmountChange = (goalId, value) => {
+    setAddAmount(prev => ({ ...prev, [goalId]: value }));
+  };
+
+  // --- Delete Goal Modal Functions ---
+  const promptDeleteGoal = (goalId) => {
+    setGoalToDelete(goalId);
+    setIsDeleteModalOpen(true);
+  };
+  const executeDeleteGoal = async () => {
+    if (!goalToDelete) return;
+    const goalId = goalToDelete;
+    setActionLoading(prev => ({ ...prev, [goalId]: true }));
+    setIsDeleteModalOpen(false);
+
+    await toast.promise(
+        fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}`, { method: 'DELETE' })
+        .then(async(response) => {
+            const responseBody = await response.json();
+            if (!response.ok) throw new Error(responseBody?.message || `HTTP error!`);
+            return responseBody;
+        })
+        .then(() => {
+            fetchGoals(); // Refetch goals
+            if (refreshWalletAndHistory) { // Refresh wallet balance
+                refreshWalletAndHistory();
+            }
+        }),
+        {
+            loading: 'Deleting goal...',
+            success: <b>Goal deleted!</b>,
+            error: (err) => <b>Failed to delete goal: {err.message}</b>,
+        }
+    );
+    setActionLoading(prev => ({ ...prev, [goalId]: false }));
+    setGoalToDelete(null); // Clear the ID
+  };
 
   // --- Add Funds to Goal ---
   const handleAddToGoal = async (goalId) => {
@@ -139,28 +183,22 @@ function SavingsGoals() {
     setActionLoading(prev => ({ ...prev, [goalId]: false }));
   };
 
-  // Helper to update amount state
-  const handleAmountChange = (goalId, value) => {
-    setAddAmount(prev => ({ ...prev, [goalId]: value }));
+  
+// --- NEW: Redeem Goal Modal Functions ---
+  const promptRedeemGoal = (goal) => {
+    setGoalToRedeem(goal);
+    setIsRedeemModalOpen(true);
   };
 
-  // --- Function to trigger the modal ---
-  const promptDeleteGoal = (goalId) => {
-    setGoalToDelete(goalId); // Store the ID
-    setIsModalOpen(true);    // Open the modal
-  };
-
-  // --- Function that holds the *actual* deletion logic ---
-  const executeDeleteGoal = async () => {
-    if (!goalToDelete) return; // Safety check
-
-    const goalId = goalToDelete;
+  const executeRedeemGoal = async () => {
+    if (!goalToRedeem) return;
+    const goalId = goalToRedeem.goal_id;
     setActionLoading(prev => ({ ...prev, [goalId]: true }));
-    setIsModalOpen(false); // Close modal
+    setIsRedeemModalOpen(false);
 
     await toast.promise(
-        fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}`, {
-            method: 'DELETE',
+        fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}/redeem`, {
+            method: 'POST',
         })
         .then(async(response) => {
             const responseBody = await response.json();
@@ -170,26 +208,21 @@ function SavingsGoals() {
             return responseBody;
         })
         .then(() => {
-            fetchGoals(); // Refetch goals
-            if (refreshWalletAndHistory) {
+            fetchGoals(); // Refetch goals (it will be gone from the list)
+            if (refreshWalletAndHistory) { // Refresh wallet balance
                 refreshWalletAndHistory();
             }
         }),
         {
-            loading: 'Deleting goal...',
-            success: <b>Goal deleted!</b>,
-            error: (err) => <b>Failed to delete goal: {err.message}</b>,
+            loading: 'Redeeming goal...',
+            success: <b>Goal redeemed! Funds are in your wallet.</b>,
+            error: (err) => <b>Failed to redeem: {err.message}</b>,
         }
     );
     setActionLoading(prev => ({ ...prev, [goalId]: false }));
-    setGoalToDelete(null); // Clear the ID
+    setGoalToRedeem(null);
   };
-  
-  // --- Function to focus input ---
-  const handleFocusNewGoalInput = () => {
-    newGoalNameInputRef.current?.focus();
-    newGoalNameInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
+  // --- END NEW FUNCTIONS ---
 
 
   // --- Render Logic ---
@@ -219,6 +252,7 @@ function SavingsGoals() {
             const target = parseFloat(goal.target_amount);
             const percentage = target > 0 ? Math.min((current / target) * 100, 100) : 0;
             const isLoadingThisGoalAction = actionLoading[goal.goal_id];
+            const isComplete = percentage >= 100; // Check if goal is complete
 
             return (
               <li key={goal.goal_id} className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
@@ -231,6 +265,8 @@ function SavingsGoals() {
                       <span className="ml-2 text-xs font-semibold text-primary-blue">({percentage.toFixed(0)}%)</span>
                     </span>
                   </div>
+
+                  {/* Delete Button */}
                    <button
                      onClick={() => promptDeleteGoal(goal.goal_id)} // Use prompt function
                      disabled={loading || isLoadingThisGoalAction}
@@ -239,34 +275,52 @@ function SavingsGoals() {
                     {isLoadingThisGoalAction ? '...' : 'Delete'}
                    </button>
                 </div>
-                {/* Progress Bar */}
+               
+               {/* Progress Bar */}
                 <div className="w-full bg-neutral-200 rounded-full h-2.5 dark:bg-neutral-700 mt-1 mb-3">
                   <div
-                    className="bg-primary-blue h-2.5 rounded-full transition-all duration-300 ease-out"
+                    // --- Change color if complete ---
+                    className={`h-2.5 rounded-full transition-all duration-300 ease-out ${
+                      isComplete ? 'bg-accent-green' : 'bg-primary-blue'
+                    }`}
                     style={{ width: `${percentage}%` }}
                   ></div>
                 </div>
 
-                {/* --- Add Funds Input Group --- */}
-                <div className="flex flex-wrap gap-2 items-center mt-2">
-                    <input
-                        type="number"
-                        placeholder="Amount"
-                        min="0.01"
-                        step="0.01"
-                        value={addAmount[goal.goal_id] || ''}
-                        onChange={(e) => handleAmountChange(goal.goal_id, e.target.value)}
-                        disabled={loading || isLoadingThisGoalAction}
-                        className="flex-grow basis-28 p-1.5 border border-neutral-300 rounded-md text-sm focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50"
-                    />
+                {/* Show "Add Funds" OR "Redeem" --- */}
+                {!isComplete ? (
+                  <div className="flex flex-wrap gap-2 items-center mt-2">
+                      <input
+                          type="number"
+                          placeholder="Amount"
+                          min="0.01"
+                          step="0.01"
+                          value={addAmount[goal.goal_id] || ''}
+                          onChange={(e) => handleAmountChange(goal.goal_id, e.target.value)}
+                          disabled={loading || isLoadingThisGoalAction}
+                          className="flex-grow basis-28 p-1.5 border border-neutral-300 rounded-md text-sm focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50"
+                      />
+                      <button
+                          onClick={() => handleAddToGoal(goal.goal_id)}
+                          disabled={loading || isLoadingThisGoalAction || !(addAmount[goal.goal_id] > 0)}
+                          className="px-3 py-1.5 bg-accent-green text-white text-xs rounded hover:bg-accent-green-dark focus:outline-none focus:ring-2 focus:ring-accent-green focus:ring-offset-1 disabled:bg-neutral-300 disabled:cursor-not-allowed"
+                      >
+                          {isLoadingThisGoalAction ? 'Adding...' : 'Add Funds'}
+                      </button>
+                  </div>
+                ) : (
+                  <div className="mt-2">
                     <button
-                        onClick={() => handleAddToGoal(goal.goal_id)}
-                        disabled={loading || isLoadingThisGoalAction || !(addAmount[goal.goal_id] > 0)}
-                        className="px-3 py-1.5 bg-accent-green text-white text-xs rounded hover:bg-accent-green-dark focus:outline-none focus:ring-2 focus:ring-accent-green focus:ring-offset-1 disabled:bg-neutral-300 disabled:cursor-not-allowed"
+                      onClick={() => promptRedeemGoal(goal)}
+                      disabled={loading || isLoadingThisGoalAction}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-accent-green text-white text-sm font-semibold rounded hover:bg-accent-green-dark focus:outline-none focus:ring-2 focus:ring-accent-green focus:ring-offset-1 disabled:bg-neutral-300 disabled:cursor-not-allowed"
                     >
-                        {isLoadingThisGoalAction ? 'Adding...' : 'Add Funds'}
+                      <CheckCircleIcon className="h-5 w-5" />
+                      {isLoadingThisGoalAction ? 'Redeeming...' : 'Redeem Goal'}
                     </button>
-                </div>
+                  </div>
+                )}
+
                  {/* --- Goal Transaction History --- */}
                  <GoalTransactionHistory goalId={goal.goal_id} apiUrl={apiUrl} />
               </li>
@@ -312,17 +366,30 @@ function SavingsGoals() {
         </div>
       </form>
       
-      {/* --- Modal --- */}
+      {/* --- Delete Modal --- */}
       <ConfirmModal
-        isOpen={isModalOpen}
+        isOpen={isDeleteModalOpen}
         title="Confirm Deletion"
-        onClose={() => setIsModalOpen(false)} // Use anonymous function
+        onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={executeDeleteGoal}
         confirmText="Delete"
         confirmVariant="danger"
       >
-        Are you sure you want to delete this savings goal? This action cannot be undone.
+        Are you sure you want to delete this savings goal? Any funds will be returned to your wallet.
       </ConfirmModal>
+
+      {/* --- NEW: Redeem Modal --- */}
+      <ConfirmModal
+        isOpen={isRedeemModalOpen}
+        title="Confirm Redemption"
+        onClose={() => setIsRedeemModalOpen(false)}
+        onConfirm={executeRedeemGoal}
+        confirmText="Redeem"
+        confirmVariant="primary" // Use primary color
+      >
+        Are you sure you want to redeem this goal? The total amount of <b>{formatCurrency(goalToRedeem?.current_amount)}</b> will be transferred to your main wallet and this goal will be deleted.
+      </ConfirmModal>
+      
     </div>
   );
 }

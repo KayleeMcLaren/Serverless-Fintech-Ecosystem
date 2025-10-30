@@ -206,6 +206,30 @@ resource "aws_lambda_function" "get_goal_transactions_lambda" {
   }
 }
 
+# --- LAMBDA: REDEEM SAVINGS GOAL ---
+data "archive_file" "redeem_savings_goal_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../../../src/redeem_savings_goal"
+  output_path = "${path.module}/redeem_savings_goal.zip"
+}
+resource "aws_lambda_function" "redeem_savings_goal_lambda" {
+  function_name    = "${var.project_name}-redeem-savings-goal"
+  role             = aws_iam_role.lambda_exec_role.arn # Reuses the same role
+  filename         = data.archive_file.redeem_savings_goal_zip.output_path
+  source_code_hash = data.archive_file.redeem_savings_goal_zip.output_base64sha256
+  handler          = "handler.redeem_savings_goal"
+  runtime          = "python3.12"
+  tags             = var.tags
+  environment {
+    variables = {
+      SAVINGS_TABLE_NAME          = var.dynamodb_table_name
+      WALLETS_TABLE_NAME          = var.wallets_table_name
+      TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
+      CORS_ORIGIN                 = var.frontend_cors_origin
+    }
+  }
+}
+
 ################################################################################
 # --- API GATEWAY ---
 ################################################################################
@@ -459,6 +483,61 @@ resource "aws_api_gateway_integration_response" "get_goal_transactions_options_i
   depends_on = [aws_api_gateway_integration.get_goal_transactions_options_integration]
 }
 
+# --- API: POST /savings-goal/{goal_id}/redeem ---
+resource "aws_api_gateway_resource" "redeem_goal_resource" {
+  rest_api_id = var.api_gateway_id
+  parent_id   = aws_api_gateway_resource.savings_goal_id_resource.id
+  path_part   = "redeem"
+}
+
+resource "aws_api_gateway_method" "redeem_goal_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.redeem_goal_resource.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "redeem_goal_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id             = aws_api_gateway_resource.redeem_goal_resource.id
+  http_method             = aws_api_gateway_method.redeem_goal_method.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.redeem_savings_goal_lambda.invoke_arn
+}
+
+# --- API: OPTIONS /savings-goal/{goal_id}/redeem (CORS) ---
+resource "aws_api_gateway_method" "redeem_goal_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.redeem_goal_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_method_response" "redeem_goal_options_200" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.redeem_goal_resource.id
+  http_method   = aws_api_gateway_method.redeem_goal_options_method.http_method
+  status_code   = "200"
+  response_models = { "application/json" = "Empty" }
+  response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => true }
+}
+resource "aws_api_gateway_integration" "redeem_goal_options_integration" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.redeem_goal_resource.id
+  http_method   = aws_api_gateway_method.redeem_goal_options_method.http_method
+  type          = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+resource "aws_api_gateway_integration_response" "redeem_goal_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.redeem_goal_resource.id
+  http_method = aws_api_gateway_method.redeem_goal_options_method.http_method
+  status_code = aws_api_gateway_method_response.redeem_goal_options_200.status_code
+  response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => "'${v}'" }
+  response_templates = { "application/json" = "" }
+  depends_on = [aws_api_gateway_integration.redeem_goal_options_integration]
+}
+
 ################################################################################
 # --- LAMBDA PERMISSIONS ---
 ################################################################################
@@ -499,6 +578,14 @@ resource "aws_lambda_permission" "api_gateway_get_goal_transactions_permission" 
   statement_id  = "AllowAPIGatewayToInvokeGetGoalTx"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.get_goal_transactions_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${var.api_gateway_execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "api_gateway_redeem_goal_permission" {
+  statement_id  = "AllowAPIGatewayToInvokeRedeemGoal"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.redeem_savings_goal_lambda.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${var.api_gateway_execution_arn}/*/*"
 }
