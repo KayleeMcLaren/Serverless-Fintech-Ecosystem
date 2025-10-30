@@ -15,6 +15,7 @@ output "api_gateway_config_hash" {
     aws_api_gateway_resource.savings_by_wallet_id_resource,
     aws_api_gateway_method.get_savings_goals_method,
     aws_api_gateway_integration.get_savings_goals_integration,
+    # (No OPTIONS for this simple GET)
 
     # /savings-goal/{goal_id}
     aws_api_gateway_resource.savings_goal_id_resource,
@@ -44,5 +45,14 @@ output "api_gateway_config_hash" {
     aws_api_gateway_integration.get_goal_transactions_options_integration,
     aws_api_gateway_method_response.get_goal_transactions_options_200,
     aws_api_gateway_integration_response.get_goal_transactions_options_integration_response,
+
+    # POST /savings-goal/{goal_id}/redeem
+    aws_api_gateway_resource.redeem_goal_resource,
+    aws_api_gateway_method.redeem_goal_method,
+    aws_api_gateway_integration.redeem_goal_integration,
+    aws_api_gateway_method.redeem_goal_options_method,
+    aws_api_gateway_method_response.redeem_goal_options_200,
+    aws_api_gateway_integration.redeem_goal_options_integration,
+    aws_api_gateway_integration_response.redeem_goal_options_integration_response,
   ]))
 }

@@ -27,9 +27,10 @@ WALLETS_TABLE_NAME = os.environ.get('WALLETS_TABLE_NAME')
 LOG_TABLE_NAME = os.environ.get('TRANSACTIONS_LOG_TABLE_NAME') # Get log table name
 
 # --- AWS Resources ---
-dynamodb_client = boto3.client('dynamodb') # Use client for transactions
-dynamodb_resource = boto3.resource('dynamodb') # Use resource for gets/puts
-savings_table = dynamodb_resource.Table(SAVINGS_TABLE_NAME) if SAVINGS_TABLE_NAME else None # Use resource client for savings table
+dynamodb_client = boto3.client('dynamodb')
+dynamodb_resource = boto3.resource('dynamodb')
+savings_table = dynamodb_resource.Table(SAVINGS_TABLE_NAME) if SAVINGS_TABLE_NAME else None
+wallets_table = dynamodb_resource.Table(WALLETS_TABLE_NAME) if WALLETS_TABLE_NAME else None # <-- Add wallets table
 log_table = dynamodb_resource.Table(LOG_TABLE_NAME) if LOG_TABLE_NAME else None
 
 # --- Transaction Logging Helper ---
@@ -86,30 +87,21 @@ def add_to_savings_goal(event, context):
                     "body": json.dumps({"message": "Valid wallet_id and positive amount are required."})
                 }
             
-            # --- Fetch Goal Name BEFORE Transaction ---
-            goal_name_from_db = None # Use a temporary variable
+            # 1. Fetch Goal Name
             try:
                 goal_response = savings_table.get_item(Key={'goal_id': goal_id})
                 goal_item = goal_response.get('Item')
                 if goal_item:
-                    # Use the explicit default string 'Savings Goal' as the fallback
-                    goal_name_from_db = goal_item.get('goal_name', 'Savings Goal')
-                else:
-                    print(f"Warning: Savings goal {goal_id} not found before transaction attempt.")
+                    goal_name_for_log = goal_item.get('goal_name', 'Savings Goal')
             except Exception as get_e:
                 print(f"Warning: Could not fetch goal name for logging: {get_e}")
 
-            # Assign to goal_name_for_log outside the inner try if found, otherwise keep default
-            if goal_name_from_db:
-                goal_name_for_log = goal_name_from_db
-            # --- End Fetch Goal Name ---
-
             print(f"Attempting transaction: Move {amount} from wallet {wallet_id} to goal '{goal_name_for_log}' ({goal_id})")
 
-            # Perform the transaction
+            # 2. Perform the transaction
             dynamodb_client.transact_write_items(
                 TransactItems=[
-                    { # 1. Debit wallet
+                    { # Debit wallet
                         'Update': {
                             'TableName': WALLETS_TABLE_NAME,
                             'Key': {'wallet_id': {'S': wallet_id}},
@@ -118,15 +110,15 @@ def add_to_savings_goal(event, context):
                             'ExpressionAttributeValues': {':amount': {'N': str(amount)}}
                         }
                     },
-                    { # 2. Credit savings goal
+                    { # Credit savings goal
                         'Update': {
                             'TableName': SAVINGS_TABLE_NAME,
                             'Key': {'goal_id': {'S': goal_id}},
                             'UpdateExpression': 'SET current_amount = current_amount + :amount',
-                            'ConditionExpression': 'attribute_exists(goal_id) AND wallet_id = :wallet_id_val', # Extra check: ensure goal belongs to wallet
+                            'ConditionExpression': 'attribute_exists(goal_id) AND wallet_id = :wallet_id_val',
                             'ExpressionAttributeValues': {
                                 ':amount': {'N': str(amount)},
-                                ':wallet_id_val': {'S': wallet_id} # Add wallet_id to condition
+                                ':wallet_id_val': {'S': wallet_id}
                              }
                         }
                     }
@@ -134,35 +126,29 @@ def add_to_savings_goal(event, context):
             )
             print(f"Transaction successful for goal {goal_id}")
 
-            # --- Fetch Updated Goal Balance AFTER Transaction ---
+            # --- 3. FIX: Get new wallet balance with ConsistentRead ---
+            new_wallet_balance = 'N/A'
             try:
-                updated_goal_response = savings_table.get_item(Key={'goal_id': goal_id})
-                updated_goal_item = updated_goal_response.get('Item')
-                if updated_goal_item:
-                    updated_goal_balance = updated_goal_item.get('current_amount') # Get the new current_amount
-            except Exception as get_e:
-                print(f"Warning: Could not fetch updated goal balance after transaction: {get_e}")
-            # --- End Fetch Updated Goal Balance ---
-
-            # --- Log Transaction (using fetched goal name and balance) ---
+                wallet_response = wallets_table.get_item(
+                    Key={'wallet_id': wallet_id},
+                    ConsistentRead=True # Force strongly consistent read
+                )
+                new_wallet_balance = wallet_response.get('Item', {}).get('balance', 'N/A')
+            except Exception as log_get_e:
+                print(f"Could not fetch new wallet balance for logging: {log_get_e}")
+            # --- END FIX ---
+                
+            # 4. Log Transaction
             log_transaction(
-                wallet_id=wallet_id, # Log against the main wallet
+                wallet_id=wallet_id,
                 tx_type="SAVINGS_ADD",
                 amount=amount,
-                # Pass the GOAL's balance, not the wallet's
-                new_balance=updated_goal_balance,
+                new_balance=new_wallet_balance, # Pass the fetched balance
                 related_id=goal_id,
-                details={
-                    "goal_name": goal_name_for_log,
-                    "balance_is_goal": True # Flag to indicate this balance is for the goal
-                }
+                details={"goal_name": goal_name_for_log}
             )
-            # --- End Log ---
-            
-            return {
-                "statusCode": 200, "headers": POST_CORS_HEADERS,
-                "body": json.dumps({"message": f"Successfully added {amount} to savings goal."})
-            }
+
+            return { "statusCode": 200, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Successfully added {amount} to savings goal."}) }
 
         except ClientError as e:
             error_code = e.response['Error']['Code']

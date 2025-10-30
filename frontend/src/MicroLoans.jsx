@@ -4,7 +4,7 @@ import Spinner from './Spinner';
 import ConfirmModal from './ConfirmModal';
 import LoanDetailsModal from './LoanDetailsModal';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
-import { CurrencyDollarIcon } from '@heroicons/react/24/outline';
+import { CurrencyDollarIcon, MagnifyingGlassIcon, XMarkIcon  } from '@heroicons/react/24/outline';
 import WalletPrompt from './WalletPrompt';
 
 // --- Rate Logic (matches backend) ---
@@ -15,6 +15,48 @@ const calculateDisplayRate = (term_months) => {
     if (numTerm <= 12) return '8.0';
     if (numTerm <= 24) return '12.0';
     return '15.0';
+};
+// ---
+
+// --- NEW: Combined helper function to get all display values ---
+const calculateDisplayValues = (amountStr, termStr) => {
+    const P = parseFloat(amountStr || '0');
+    const term_months = parseInt(termStr, 10);
+
+    // 1. Calculate Rate (matches backend)
+    let annual_rate_val = 10.0;
+    if (isNaN(term_months)) {
+        // Can't calculate rate or payment without a term
+        return { rate: '...', monthlyPayment: 0, totalRepayment: 0 };
+    }
+    
+    if (term_months <= 12) annual_rate_val = 8.0;
+    else if (term_months <= 24) annual_rate_val = 12.0;
+    else annual_rate_val = 15.0;
+
+    const rate = annual_rate_val.toFixed(1);
+
+    // 2. Calculate Monthly Payment (replicates backend amortization)
+    const monthly_rate = (annual_rate_val / 100) / 12;
+    const n = term_months;
+    let monthlyPayment = 0;
+
+    if (P === 0) {
+        return { rate, monthlyPayment: 0, totalRepayment: 0 };
+    }
+    
+    if (monthly_rate === 0) {
+        monthlyPayment = P / n;
+    } else {
+        const numerator = monthly_rate * Math.pow(1 + monthly_rate, n);
+        const denominator = Math.pow(1 + monthly_rate, n) - 1;
+        monthlyPayment = P * (numerator / denominator);
+    }
+    
+    // 3. Calculate Total Repayment
+    const totalRepayment = monthlyPayment * n;
+
+    return { rate, monthlyPayment, totalRepayment };
 };
 // ---
 
@@ -35,15 +77,17 @@ function MicroLoans() {
     const [newLoanAmount, setNewLoanAmount] = useState(String(DEFAULT_LOAN_AMOUNT));
     const [newLoanTerm, setNewLoanTerm] = useState('');
     const [displayRate, setDisplayRate] = useState('...');
+    const [displayMonthlyPayment, setDisplayMonthlyPayment] = useState(0);
+    const [displayTotalRepayment, setDisplayTotalRepayment] = useState(0);
     const [repayAmount, setRepayAmount] = useState({});
-
-    // --- State for Admin actions/modal ---
-    const [loanIdToManage, setLoanIdToManage] = useState(''); // <-- THIS WAS THE MISSING LINE
+    const [loanIdToManage, setLoanIdToManage] = useState(''); 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalAction, setModalAction] = useState(null);
     const [selectedLoan, setSelectedLoan] = useState(null);
-    
     const loanAmountSliderRef = useRef(null);
+    const [searchQuery, setSearchQuery] = useState(''); // For the <input>
+    const [activeFilter, setActiveFilter] = useState(''); // For the applied filter
+    const [filteredLoans, setFilteredLoans] = useState([]); // For display;
     
     // --- Fetch loans when walletId changes ---
     useEffect(() => {
@@ -55,10 +99,42 @@ function MicroLoans() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [walletId]);
 
-    // --- Recalculate display rate when term changes ---
+    // --- UPDATED: Recalculate all display values on change ---
     useEffect(() => {
-        setDisplayRate(calculateDisplayRate(newLoanTerm));
-    }, [newLoanTerm]);
+        const { rate, monthlyPayment, totalRepayment } = calculateDisplayValues(newLoanAmount, newLoanTerm);
+        
+        setDisplayRate(rate);
+        setDisplayMonthlyPayment(monthlyPayment);
+        setDisplayTotalRepayment(totalRepayment);
+    }, [newLoanAmount, newLoanTerm]); // Dependencies are correct
+
+    // --- 3. Update useEffect for filtering ---
+    useEffect(() => {
+        const query = activeFilter.toLowerCase().trim(); // Use activeFilter
+        if (!query) {
+            setFilteredLoans(loans); // No filter? Show all loans
+            return;
+        }
+        const filtered = loans.filter(loan => {
+            const status = loan.status.toLowerCase();
+            const loanId = loan.loan_id.toLowerCase();
+            return status.includes(query) || loanId.includes(query);
+        });
+        setFilteredLoans(filtered);
+    }, [activeFilter, loans]); // Re-run when applied filter or loans list changes
+    // ---
+
+    // --- 4. Add Search and Clear Handlers ---
+    const handleSearchSubmit = (e) => {
+        e.preventDefault();
+        setActiveFilter(searchQuery); // Apply the filter
+    };
+
+    const handleSearchClear = () => {
+        setSearchQuery(''); // Clear the input box
+        setActiveFilter(''); // Clear the applied filter
+    };
+    // ---
 
     // --- Fetch Loans (Add Toast on Error) ---
     const fetchLoans = async () => {
@@ -234,9 +310,46 @@ function MicroLoans() {
             <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mt-8 shadow-sm">
                 <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Micro-Loans</h2>
 
+                {/* --- 5. Update Search Bar to be a Form --- */}
+                <form onSubmit={handleSearchSubmit} className="mb-4 flex gap-2 items-center">
+                    <div className="relative flex-grow">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <MagnifyingGlassIcon className="h-5 w-5 text-neutral-400" aria-hidden="true" />
+                        </div>
+                        <input
+                            type="search"
+                            name="loanSearch"
+                            id="loanSearch"
+                            className="block w-full pl-10 pr-3 py-2 border border-neutral-300 rounded-md leading-5 bg-white placeholder-neutral-500 focus:outline-none focus:ring-primary-blue focus:border-primary-blue sm:text-sm"
+                            placeholder="Search by status or ID..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                    {/* Add Clear button */}
+                    {searchQuery && (
+                        <button
+                            type="button"
+                            onClick={handleSearchClear}
+                            className="p-2 text-neutral-500 hover:text-neutral-700"
+                            aria-label="Clear search"
+                        >
+                            <XMarkIcon className="h-5 w-5" />
+                        </button>
+                    )}
+                    <button
+                        type="submit"
+                        className="px-4 py-2 bg-primary-blue text-white text-sm font-medium rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2"
+                    >
+                        Search
+                    </button>
+                </form>
+                {/* --- End Search Form --- */}
+
                 {loading && !Object.values(actionLoading).some(Boolean) && <Spinner />}
                 
-                {/* --- Display Existing Loans --- */}
+               {/* --- 5. Update Render Logic --- */}
+                {/* Case 1: Truly empty state (no loans at all) */}
                 {!loading && loans.length === 0 && (
                     <div className="text-center text-neutral-500 my-4 py-8">
                       <CurrencyDollarIcon className="h-12 w-12 mx-auto text-neutral-400" />
@@ -244,12 +357,24 @@ function MicroLoans() {
                       <p className="mt-1 text-sm text-neutral-500">Apply for a new loan using the form below.</p>
                     </div>
                 )}
-                {!loading && loans.length > 0 && (
+
+                {/* Case 2: No search results, but loans exist */}
+                {!loading && loans.length > 0 && filteredLoans.length === 0 && (
+                     <div className="text-center text-neutral-500 my-4 py-8">
+                      <MagnifyingGlassIcon className="h-12 w-12 mx-auto text-neutral-400" />
+                      <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Loans Match Your Search</h3>
+                      <p className="mt-1 text-sm text-neutral-500">Try a different search term.</p>
+                    </div>
+                )}
+
+                {/* Case 3: Show filtered results */}
+                {!loading && filteredLoans.length > 0 && (
                     <div className="space-y-4 mb-6">
-                        {loans.map((loan) => {
+                        {filteredLoans.map((loan) => { // <-- Use filteredLoans
                             const isLoadingThisAction = actionLoading[loan.loan_id];
                             const isApproved = loan.status === 'APPROVED';
                             return (
+                                //--- Loan Card ---
                                 <div key={loan.loan_id} className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
                                     <div className="flex justify-between items-start mb-2">
                                         <span className={`text-xs font-medium px-2.5 py-0.5 rounded ${
@@ -259,6 +384,7 @@ function MicroLoans() {
                                         }`}>
                                             {loan.status}
                                         </span>
+                                        {/* Details Button */}
                                         <button 
                                             onClick={() => setSelectedLoan(loan)}
                                             className="px-2 py-1 bg-neutral-100 text-neutral-700 text-xs rounded hover:bg-neutral-200 border border-neutral-300"
@@ -266,13 +392,12 @@ function MicroLoans() {
                                             Details
                                         </button>
                                     </div>
-
+                                    {/* Admin Prompt for PENDING Loans */}
                                     {loan.status === 'PENDING' && (
                                          <div className="flex gap-2 mt-2 pt-2 border-t border-neutral-100">
                                              <p className="text-xs text-neutral-500 italic flex-grow">Use Admin Tools below to approve/reject</p>
                                          </div>
                                      )}
-                                    
                                     <p className="text-sm text-neutral-700 mt-2">
                                         Amount: <span className="font-semibold">{formatCurrency(loan.amount)}</span>
                                         {isApproved && ` (Balance: ${formatCurrency(loan.remaining_balance || loan.amount)})`}
@@ -281,7 +406,8 @@ function MicroLoans() {
                                         Rate: {loan.interest_rate}% | Min. Payment: {formatCurrency(loan.minimum_payment)} | Term: {loan.loan_term_months || 'N/A'} mo.
                                     </p>
                                     <p className="text-xs text-neutral-400 mt-1 truncate">ID: {loan.loan_id}</p>
-
+                                    
+                                    {/* Repayment Section */}
                                     {isApproved && (
                                         <div className="flex flex-wrap gap-2 items-center mt-3 pt-3 border-t border-neutral-100">
                                             <input
@@ -294,6 +420,8 @@ function MicroLoans() {
                                                 disabled={loading || isLoadingThisAction}
                                                 className="flex-grow basis-28 p-1.5 border border-neutral-300 rounded-md text-sm focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50"
                                             />
+
+                                            {/* Repayment Button */}    
                                             <button
                                                 onClick={() => handleRepayment(loan.loan_id)}
                                                 disabled={loading || isLoadingThisAction || !(repayAmount[loan.loan_id] > 0)}
@@ -312,6 +440,7 @@ function MicroLoans() {
                 {/* --- Form to Apply for New Loan --- */}
                 <form onSubmit={handleApplyLoan} className="mt-6 pt-4 border-t border-neutral-200">
                     <h4 className="text-md font-semibold text-neutral-700 mb-4">Apply for New Loan</h4>
+                   {/* --- Loan Amount Slider --- */}
                     <div className="mb-4">
                         <div className="flex justify-between items-center mb-1">
                             <label htmlFor="loanAmountSlider" className="text-sm font-medium text-neutral-600">
@@ -334,6 +463,7 @@ function MicroLoans() {
                             <span>{formatCurrency(MAX_LOAN_AMOUNT)}</span>
                         </div>
                     </div>
+                    {/* --- Loan Term Dropdown --- */}
                     <div className="mb-4">
                         <label htmlFor="loanTerm" className="block text-sm font-medium text-neutral-600 mb-1">Loan Term</label>
                         <select
@@ -352,6 +482,21 @@ function MicroLoans() {
                             ))}
                         </select>
                     </div>
+
+                    {/* --- NEW: Display Calculated Totals --- */}
+                    <div className="mb-4 p-4 bg-white border border-neutral-200 rounded-md">
+                        <h5 className="text-sm font-medium text-neutral-600 mb-2">Estimated Repayment</h5>
+                        <div className="flex justify-between">
+                            <span className="text-sm text-neutral-500">Est. Monthly Payment</span>
+                            <span className="text-sm font-semibold text-neutral-800">{formatCurrency(displayMonthlyPayment)}</span>
+                        </div>
+                        <div className="flex justify-between mt-1">
+                            <span className="text-sm text-neutral-500">Est. Total Repayment</span>
+                            <span className="text-sm font-semibold text-neutral-800">{formatCurrency(displayTotalRepayment)}</span>
+                        </div>
+                    </div>
+
+                    {/* Submit Button */}
                     <div className="text-center mt-5">
                         <button
                             type="submit"
@@ -414,7 +559,7 @@ function MicroLoans() {
                 loan={selectedLoan} 
                 onClose={() => setSelectedLoan(null)} 
             />
-        </> // End React Fragment
+        </> 
     );
 }
 
