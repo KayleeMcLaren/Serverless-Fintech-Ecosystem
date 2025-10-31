@@ -99,7 +99,7 @@ function Wallet() {
                 type="email"
                 value={emailInput}
                 onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="Enter your email"
+                placeholder="Enter your (mock) email"
                 disabled={loading || onboardingStatus}
                 className="flex-grow basis-60 p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 min-w-[150px]"
             />

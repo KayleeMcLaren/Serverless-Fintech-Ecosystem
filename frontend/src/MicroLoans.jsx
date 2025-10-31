@@ -397,7 +397,7 @@ function MicroLoans() {
                                     {/* Admin Prompt for PENDING Loans */}
                                     {loan.status === 'PENDING' && (
                                          <div className="flex gap-2 mt-2 pt-2 border-t border-neutral-100">
-                                             <p className="text-xs text-neutral-500 italic flex-grow">Use Admin Tools below to approve/reject</p>
+                                             <p className="text-xs text-neutral-500 italic flex-grow">Use Admin Tools tab to approve/reject</p>
                                          </div>
                                      )}
                                     <p className="text-sm text-neutral-700 mt-2">
