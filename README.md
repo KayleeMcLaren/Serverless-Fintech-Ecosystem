@@ -16,7 +16,7 @@ All infrastructure is provisioned and managed using **Terraform**, demonstrating
 
 ## ✅ Project Status: Complete
 
-|| Service | Status | Description |
+| Service | Status | Description |
 | :--- | :---: | :--- |
 | **Frontend UI (React)** | ✅ | A React SPA that provides a UI for all backend services. |
 | **Digital Wallet API** | ✅ | Core ledger service. Manages user balances and all transactions. |
