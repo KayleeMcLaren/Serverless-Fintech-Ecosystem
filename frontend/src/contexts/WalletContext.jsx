@@ -33,6 +33,11 @@ export function WalletProvider({ children }) {
   const [amountInput, setAmountInput] = useState('');
   const [transactionCount, setTransactionCount] = useState(0); // To trigger history refresh
 
+  // --- NEW: State for onboarding ---
+  const [emailInput, setEmailInput] = useState('');
+  const [onboardingStatus, setOnboardingStatus] = useState(null);
+  // ---
+
   // --- Wallet Action Functions ---
 
   const handleFetchWallet = useCallback(async (idToFetch, isInitialLoad = false) => {
@@ -72,50 +77,97 @@ export function WalletProvider({ children }) {
     }
   }, [walletIdInput, wallet]); // Dependencies are correct
 
-  // Auto-fetch wallet on initial load
-  useEffect(() => {
-    const savedWalletId = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (savedWalletId) {
-      console.log('Found saved wallet ID:', savedWalletId);
-      setWalletIdInput(savedWalletId);
-      handleFetchWallet(savedWalletId, true).catch(err => {
-          console.error("Auto-fetch failed:", err.message);
-          localStorage.removeItem(LOCAL_STORAGE_KEY);
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only once on mount
+  // --- NEW: Polling function ---
+  const pollOnboardingStatus = (userId) => {
+    const intervalId = setInterval(async () => {
+      try {
+        const response = await fetch(`${API_URL}/onboarding/${userId}/status`);
+        if (!response.ok) {
+          // Stop polling on a hard error
+          clearInterval(intervalId);
+          toast.error("Failed to get onboarding status.");
+          setOnboardingStatus('FAILED');
+          return;
+        }
+        
+        const data = await response.json();
+        setOnboardingStatus(data.onboarding_status); // Update status for UI
 
-  // --- THIS FUNCTION IS NOW CORRECT ---
-  const handleCreateWallet = async () => {
-    setLoading(true);
-    setWallet(null);
-    await toast.promise(
-      fetch(`${API_URL}/wallet`, { method: 'POST' })
-        .then(async (response) => {
-          if (!response.ok) {
-            // Correct error handling
-            let errorMsg = `HTTP error! Status: ${response.status}`;
-            try { const errData = await response.json(); errorMsg = errData.message || errorMsg; } catch (e) {}
-            throw new Error(errorMsg);
-          }
-          return response.json();
-        })
-        .then((data) => {
-          setWallet(data.wallet);
-          localStorage.setItem(LOCAL_STORAGE_KEY, data.wallet.wallet_id);
-          setWalletIdInput(data.wallet.wallet_id);
-          setTransactionCount(prev => prev + 1);
-          console.log('Wallet created and ID saved:', data.wallet.wallet_id);
-        }),
-      // Correct toast options
-      {
-        loading: 'Creating wallet...',
-        success: <b>Wallet created!</b>,
-        error: (err) => <b>Failed to create wallet: {err.message}</b>,
+        switch (data.onboarding_status) {
+          case 'PENDING_ID_VERIFICATION':
+            toast.loading('Step 1: Verifying identity...', { id: 'onboarding-toast' });
+            break;
+          case 'PENDING_MANUAL_REVIEW':
+            toast.loading('Step 2: Flagged for manual review...', { id: 'onboarding-toast' });
+            // In a real app, we'd stop polling here. For the demo, we'll let it continue.
+            // You can manually call the 'manual-review' API with Postman to approve it.
+            break;
+          case 'PENDING_CREDIT_CHECK':
+            toast.loading('Step 3: Running credit check...', { id: 'onboarding-toast' });
+            break;
+          case 'PENDING_PROVISIONING':
+            toast.loading('Step 4: Provisioning account...', { id: 'onboarding-toast' });
+            break;
+          case 'APPROVED':
+            clearInterval(intervalId); // Stop polling!
+            toast.success('Account approved! Wallet created.', { id: 'onboarding-toast' });
+            // The status check now returns the wallet_id
+            if (data.wallet_id) {
+              handleFetchWallet(data.wallet_id, true); // Fetch the new wallet
+            }
+            setOnboardingStatus(null);
+            setEmailInput(''); // Clear email input
+            break;
+          case 'REJECTED':
+          case 'REJECTED_CREDIT':
+          case 'REJECTED_MANUAL':
+            clearInterval(intervalId); // Stop polling
+            toast.error('Application was rejected.', { id: 'onboarding-toast' });
+            setOnboardingStatus(null);
+            break;
+        }
+      } catch (err) {
+        clearInterval(intervalId);
+        toast.error(`Polling error: ${err.message}`, { id: 'onboarding-toast' });
+        setOnboardingStatus(null);
       }
-    );
-    setLoading(false);
+    }, 5000); // Poll every 5 seconds
+  };
+
+  // --- UPDATED: handleCreateWallet is now handleApplyForAccount ---
+  const handleApplyForAccount = async () => {
+    if (!emailInput || !emailInput.includes('@')) {
+        toast.error("Please enter a valid email address.");
+        return;
+    }
+    setLoading(true);
+    setOnboardingStatus('SUBMITTED');
+    const toastId = toast.loading('Submitting application...');
+
+    try {
+      const response = await fetch(`${API_URL}/onboarding/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailInput }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+          throw new Error(data.message || 'Failed to start application.');
+      }
+      
+      // Start polling
+      toast.loading('Step 1: Verifying identity...', { id: 'onboarding-toast' });
+      pollOnboardingStatus(data.user_id);
+      
+    } catch (err) {
+      toast.error(`Application failed: ${err.message}`, { id: 'onboarding-toast' });
+      setOnboardingStatus(null);
+    } finally {
+      setLoading(false); // We stop the main 'loading' spinner
+      toast.dismiss(toastId); // Dismiss the "Submitting..." toast
+    }
   };
   
   // Refresh function that child components can call
@@ -178,11 +230,14 @@ export function WalletProvider({ children }) {
     setAmountInput,
     loading,
     transactionCount,
-    handleCreateWallet,
-    handleFetchWallet, // Provide the silent fetch
+    emailInput,
+    setEmailInput,
+    onboardingStatus,
+    handleApplyForAccount, // Renamed
+    handleFetchWallet,
     handleTransaction,
-    refreshWalletAndHistory, // Provide the refresh function
-    apiUrl: API_URL, // Provide API_URL for child components
+    refreshWalletAndHistory,
+    apiUrl: API_URL,
   };
 
   return (

@@ -2,19 +2,9 @@
 
 ## 🚀 Live Demo
 
-**[https://d2pymqjbz2xiof.cloudfront.net/](https://d2pymqjbz2xiof.cloudfront.net/)**
+**[https://d18l23eogq3lrf.cloudfront.net/](https://d18l23eogq3lrf.cloudfront.net/)**
 
 *(This demo environment is deployed from the `main` branch using the `prd` Terraform workspace.)*
-
----![header](https://capsule-render.vercel.app/api?type=waving&height=200&color=gradient&text=Serverless%20Fintech%20Ecosystem&fontSize=35&strokeWidth=0&desc=An%20Event-Driven%20Microservice%20Portfolio%20on%20AWS&descAlign=50&descAlignY=62&reversal=false&fontAlign=50&fontAlignY=40)
-
-## 🚀 Live Demo
-
-**[https://d2pymqjbz2xiof.cloudfront.net/](https://d2pymqjbz2xiof.cloudfront.net/)**
-
-*(This demo environment is deployed from the `main` branch using the `prd` Terraform workspace.)*
-
----
 
 ## 📖 About This Project
 
