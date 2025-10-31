@@ -2,7 +2,7 @@
 
 ## 🚀 Live Demo
 
-**[https://d2pymqjbz2xiof.cloudfront.net/](https://d2pymqjbz2xiof.cloudfront.net/)**
+**[https://d18l23eogq3lrf.cloudfront.net/](https://d18l23eogq3lrf.cloudfront.net/)**
 
 *(This demo environment is deployed from the `main` branch using the `prd` Terraform workspace.)*
 
