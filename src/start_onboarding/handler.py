@@ -58,20 +58,8 @@ def start_onboarding(event, context):
             if not email:
                 raise ValueError("Email is required.")
 
-            # 1. Check if user already exists (using the email GSI)
-            response = users_table.query(
-                IndexName='email-index',
-                KeyConditionExpression='email = :email',
-                ExpressionAttributeValues={':email': email}
-            )
-            if response.get('Items'):
-                return {
-                    "statusCode": 409, # Conflict
-                    "headers": POST_CORS_HEADERS,
-                    "body": json.dumps({"message": "A user with this email already exists."})
-                }
 
-            # 2. Create a new user ID
+            # Create a new user ID
             user_id = str(uuid.uuid4())
             sfn_execution_name = f"{user_id}-{int(time.time())}" # Unique name for SFN
             
@@ -80,7 +68,7 @@ def start_onboarding(event, context):
                 'email': email
             }
 
-            # 3. Start the Step Function execution
+            # Start the Step Function execution
             sfn_response = sfn_client.start_execution(
                 stateMachineArn=STEP_FUNCTION_ARN,
                 name=sfn_execution_name,

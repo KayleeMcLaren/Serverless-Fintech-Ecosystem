@@ -77,20 +77,6 @@ export function WalletProvider({ children }) {
     }
   }, [walletIdInput, wallet]); // Dependencies are correct
 
-  // Auto-fetch wallet on initial load
-  useEffect(() => {
-    const savedWalletId = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (savedWalletId) {
-      console.log('Found saved wallet ID:', savedWalletId);
-      setWalletIdInput(savedWalletId);
-      handleFetchWallet(savedWalletId, true).catch(err => {
-          console.error("Auto-fetch failed:", err.message);
-          localStorage.removeItem(LOCAL_STORAGE_KEY);
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only once on mount
-
   // --- NEW: Polling function ---
   const pollOnboardingStatus = (userId) => {
     const intervalId = setInterval(async () => {
