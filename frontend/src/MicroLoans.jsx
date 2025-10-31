@@ -511,38 +511,6 @@ function MicroLoans() {
                 </form>
             </div>
 
-            {/* --- Admin Tools Section --- */}
-            <div className="bg-neutral-800 text-neutral-200 border border-neutral-700 rounded-lg p-6 mt-8 shadow-sm">
-                <h2 className="text-xl font-semibold text-white mb-4 text-center">Demo Admin Tools</h2>
-                <p className="text-sm text-neutral-400 text-center mb-4">
-                    Use these buttons to simulate an admin approving or rejecting a 'PENDING' loan.
-                </p>
-                <div className="flex flex-wrap gap-3 items-stretch">
-                    <input
-                        type="text"
-                        value={loanIdToManage}
-                        onChange={(e) => setLoanIdToManage(e.target.value)}
-                        placeholder="Paste Loan ID from list above"
-                        disabled={!!actionLoading['approve'] || !!actionLoading['reject']}
-                        className="flex-grow basis-60 p-2 border border-neutral-600 bg-neutral-700 text-white rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 min-w-[150px]"
-                    />
-                    <button
-                        onClick={() => promptLoanAction('approve')}
-                        disabled={!!actionLoading['approve'] || !!actionLoading['reject'] || !loanIdToManage}
-                        className="px-4 py-2 bg-accent-green text-white rounded-md hover:bg-accent-green-dark focus:outline-none focus:ring-2 focus:ring-accent-green focus:ring-offset-2 disabled:bg-neutral-600 disabled:cursor-not-allowed flex-shrink-0"
-                    >
-                        {actionLoading['approve'] ? 'Approving...' : 'Approve'}
-                    </button>
-                    <button
-                        onClick={() => promptLoanAction('reject')}
-                        disabled={!!actionLoading['approve'] || !!actionLoading['reject'] || !loanIdToManage}
-                        className="px-4 py-2 bg-accent-red text-white rounded-md hover:bg-accent-red-dark focus:outline-none focus:ring-2 focus:ring-accent-red focus:ring-offset-2 disabled:bg-neutral-600 disabled:cursor-not-allowed flex-shrink-0"
-                    >
-                        {actionLoading['reject'] ? 'Rejecting...' : 'Reject'}
-                    </button>
-                </div>
-            </div>
-
             {/* --- Confirm Modal --- */}
             <ConfirmModal
                 isOpen={isModalOpen}

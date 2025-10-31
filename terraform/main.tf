@@ -1,3 +1,12 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0" 
+    }
+  }
+}
+
 provider "aws" {
   region = var.aws_region
 }
@@ -131,12 +140,37 @@ resource "aws_dynamodb_table" "transactions_log_table" {
   tags = local.common_tags
 }
 
+# The DynamoDB table for user onboarding status
+resource "aws_dynamodb_table" "users_table" {
+  name         = "${local.project_name}-users"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "user_id" # The main ID for the user
+
+  attribute {
+    name = "user_id"
+    type = "S"
+  }
+  attribute {
+    name = "email" # We'll index this to find users
+    type = "S"
+  }
+
+  # This index lets us query by email to prevent duplicate signups
+  global_secondary_index {
+    name            = "email-index"
+    hash_key        = "email"
+    projection_type = "ALL"
+  }
+
+  tags = local.common_tags
+}
+
 resource "aws_api_gateway_deployment" "api_deployment" {
   rest_api_id = aws_api_gateway_rest_api.api.id
 
   triggers = {
     redeployment = sha1(
-      "${module.digital_wallet.api_gateway_config_hash}${module.micro_loan.api_gateway_config_hash}${module.payment_processor.api_gateway_config_hash}${module.savings_goal.api_gateway_config_hash}${module.debt_optimiser.api_gateway_config_hash}"
+      "${module.digital_wallet.api_gateway_config_hash}${module.micro_loan.api_gateway_config_hash}${module.payment_processor.api_gateway_config_hash}${module.savings_goal.api_gateway_config_hash}${module.debt_optimiser.api_gateway_config_hash}${module.onboarding_orchestrator.api_gateway_config_hash}" # <-- ADD THIS NEW HASH
     )
   }
 
@@ -151,6 +185,17 @@ resource "aws_api_gateway_stage" "api_stage" {
   stage_name    = "v1"
 }
 
+# Allow the Onboarding Step Function to invoke the Create Wallet Lambda
+resource "aws_lambda_permission" "sfn_can_invoke_create_wallet" {
+  statement_id  = "AllowStepFunctionToInvokeCreateWallet"
+  action        = "lambda:InvokeFunction"
+  function_name = module.digital_wallet.create_wallet_lambda_arn
+  principal     = "states.amazonaws.com"
+
+  # This links it to our specific Step Function execution
+  source_arn    = module.onboarding_orchestrator.step_function_arn
+}
+
 resource "aws_sns_topic" "payment_events" {
   name = "${local.project_name}-payment-events"
   tags = local.common_tags
@@ -161,11 +206,30 @@ resource "aws_sns_topic" "loan_events" {
   tags = local.common_tags
 }
 
+# The S3 bucket for storing KYC documents (e.g., ID photos)
+resource "aws_s3_bucket" "kyc_documents_bucket" {
+  bucket = "${local.project_name}-kyc-documents-${random_id.bucket_suffix.hex}"
+  tags   = local.common_tags
+}
+
+# Block all public access to the KYC bucket
+resource "aws_s3_bucket_public_access_block" "kyc_bucket_pab" {
+  bucket = aws_s3_bucket.kyc_documents_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
 # --- SERVICE MODULES ---
 
 # --- THIS IS THE CORRECT DIGITAL_WALLET BLOCK ---
 module "digital_wallet" {
   source = "./modules/digital_wallet"
+  providers = {
+    aws = aws
+  }
 
   project_name                 = local.project_name
   tags                         = local.common_tags
@@ -184,6 +248,9 @@ module "digital_wallet" {
 
 module "micro_loan" {
   source = "./modules/micro_loan"
+  providers = {
+    aws = aws
+  }
 
   project_name                 = local.project_name
   tags                         = local.common_tags
@@ -201,6 +268,9 @@ module "micro_loan" {
 
 module "payment_processor" {
   source = "./modules/payment_processor"
+  providers = {
+    aws = aws
+  }
 
   project_name                 = local.project_name
   tags                         = local.common_tags
@@ -215,6 +285,9 @@ module "payment_processor" {
 
 module "savings_goal" {
   source = "./modules/savings_goal"
+  providers = {
+    aws = aws
+  }
 
   project_name                 = local.project_name
   tags                         = local.common_tags
@@ -232,6 +305,9 @@ module "savings_goal" {
 
 module "debt_optimiser" {
   source = "./modules/debt_optimiser"
+  providers = {
+    aws = aws
+  }
 
   project_name                 = local.project_name
   tags                         = local.common_tags
@@ -239,6 +315,28 @@ module "debt_optimiser" {
   api_gateway_root_resource_id = aws_api_gateway_rest_api.api.root_resource_id
   api_gateway_execution_arn    = aws_api_gateway_rest_api.api.execution_arn
   loans_table_arn              = module.micro_loan.loans_table_arn
+  frontend_cors_origin         = var.frontend_cors_origin
+}
+
+module "onboarding_orchestrator" {
+  source = "./modules/onboarding_orchestrator"
+  providers = {
+    aws = aws
+  }
+
+  project_name                 = local.project_name
+  tags                         = local.common_tags
+  api_gateway_id               = aws_api_gateway_rest_api.api.id
+  api_gateway_root_resource_id = aws_api_gateway_rest_api.api.root_resource_id
+  api_gateway_execution_arn    = aws_api_gateway_rest_api.api.execution_arn
+  
+  users_table_arn              = aws_dynamodb_table.users_table.arn
+  kyc_documents_bucket_arn     = aws_s3_bucket.kyc_documents_bucket.arn
+  
+  # We need to get the ARN from the digital_wallet module.
+  # This requires adding an output to that module first.
+  create_wallet_lambda_arn   = module.digital_wallet.create_wallet_lambda_arn 
+  
   frontend_cors_origin         = var.frontend_cors_origin
 }
 

@@ -6,19 +6,21 @@ import Spinner from './Spinner';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
 
 function Wallet() {
-  // Get all wallet state and functions from the context
   const {
     wallet,
     walletIdInput,
     setWalletIdInput,
     amountInput,
-    setAmountInput, // We use this to set the value
+    setAmountInput,
     loading,
     transactionCount,
-    handleCreateWallet,
-    handleFetchWallet, // The silent fetch
-    handleTransaction, // The core transaction logic
+    handleFetchWallet,
+    handleTransaction,
     apiUrl,
+    emailInput,
+    setEmailInput,
+    onboardingStatus,
+    handleApplyForAccount
   } = useWallet();
 
   // --- NEW: Local state for inline validation ---
@@ -75,30 +77,43 @@ function Wallet() {
           type="text"
           value={walletIdInput}
           onChange={(e) => setWalletIdInput(e.target.value)}
-          placeholder="Enter Wallet ID"
-          disabled={loading}
+          placeholder="Enter Existing Wallet ID"
+          disabled={loading || onboardingStatus}
           className="flex-grow basis-60 p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 min-w-[150px]"
       />
       <button
           onClick={onFetchClick} // Use the toast-wrapper
-          disabled={loading || !walletIdInput}
+          disabled={loading || onboardingStatus || !walletIdInput}
           className="px-4 py-2 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed flex-shrink-0"
       >
           {loading && !wallet ? 'Fetching...' : 'Fetch Wallet'}
       </button>
       </div>
        <p className="text-center text-neutral-500 my-4">Or</p>
-       {/* Create Button */}
-      <div className="text-center">
-      <button
-          onClick={handleCreateWallet}
-          disabled={loading}
-          className="px-4 py-2 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed"
-      >
-           {loading && !wallet ? 'Creating...' : 'Create New Wallet'}
-      </button>
-      </div>
 
+      {/* --- NEW: Onboarding / Create Account Form --- */}
+      <div className="text-center">
+        <h3 className="text-lg font-semibold text-neutral-700 mb-3">Create a New Account</h3>
+        <div className="flex flex-wrap gap-3 items-stretch justify-center">
+            <input
+                type="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="Enter your email"
+                disabled={loading || onboardingStatus}
+                className="flex-grow basis-60 p-2 border border-neutral-300 rounded-md focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50 min-w-[150px]"
+            />
+            <button
+                onClick={handleApplyForAccount}
+                disabled={loading || onboardingStatus || !emailInput}
+                className="px-4 py-2 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed flex-shrink-0"
+            >
+                 {loading ? 'Applying...' : 'Apply for Account'}
+            </button>
+        </div>
+      </div>
+      {/* --- END NEW FORM --- */}
+      
       {/* Wallet Details and Transactions - Only if wallet exists */}
       {wallet && (
            <div className="mt-6 p-4 bg-primary-blue-light/20 border border-primary-blue/30 rounded-md text-left">

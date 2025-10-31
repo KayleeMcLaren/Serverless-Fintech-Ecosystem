@@ -1,3 +1,12 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
 locals {
   # Reusable CORS headers for MOCK integrations
   cors_headers = {
@@ -262,53 +271,6 @@ resource "aws_api_gateway_resource" "wallet_resource" {
   path_part   = "wallet"
 }
 
-# --- API: POST /wallet (Create) ---
-resource "aws_api_gateway_method" "create_wallet_method" {
-  rest_api_id   = var.api_gateway_id
-  resource_id   = aws_api_gateway_resource.wallet_resource.id
-  http_method   = "POST"
-  authorization = "NONE"
-}
-resource "aws_api_gateway_integration" "create_lambda_integration" {
-  rest_api_id             = var.api_gateway_id
-  resource_id             = aws_api_gateway_resource.wallet_resource.id
-  http_method             = aws_api_gateway_method.create_wallet_method.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.create_wallet_lambda.invoke_arn
-}
-# (OPTIONS for POST /wallet)
-resource "aws_api_gateway_method" "create_wallet_options_method" {
-  rest_api_id   = var.api_gateway_id
-  resource_id   = aws_api_gateway_resource.wallet_resource.id
-  http_method   = "OPTIONS"
-  authorization = "NONE"
-}
-resource "aws_api_gateway_method_response" "create_wallet_options_200" {
-   rest_api_id   = var.api_gateway_id
-   resource_id   = aws_api_gateway_resource.wallet_resource.id
-   http_method   = aws_api_gateway_method.create_wallet_options_method.http_method
-   status_code   = "200"
-   response_models = { "application/json" = "Empty" }
-   response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => true }
-}
-resource "aws_api_gateway_integration" "create_wallet_options_integration" {
-  rest_api_id             = var.api_gateway_id
-  resource_id           = aws_api_gateway_resource.wallet_resource.id
-  http_method             = aws_api_gateway_method.create_wallet_options_method.http_method
-  type                    = "MOCK"
-  request_templates = { "application/json" = "{\"statusCode\": 200}" }
-}
-resource "aws_api_gateway_integration_response" "create_wallet_options_integration_response" {
-  rest_api_id = var.api_gateway_id
-  resource_id = aws_api_gateway_resource.wallet_resource.id
-  http_method = aws_api_gateway_method.create_wallet_options_method.http_method
-  status_code = aws_api_gateway_method_response.create_wallet_options_200.status_code
-  response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => "'${v}'" }
-  response_templates = { "application/json" = "" }
-  depends_on = [aws_api_gateway_integration.create_wallet_options_integration]
-}
-
 
 # --- API: /wallet/{wallet_id} ---
 resource "aws_api_gateway_resource" "wallet_id_resource" {
@@ -536,14 +498,6 @@ resource "aws_api_gateway_integration_response" "get_transactions_options_integr
 ################################################################################
 # --- LAMBDA PERMISSIONS (API Gateway) ---
 ################################################################################
-
-resource "aws_lambda_permission" "api_gateway_create_permission" {
-  statement_id  = "AllowAPIGatewayToInvokeCreate"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.create_wallet_lambda.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${var.api_gateway_execution_arn}/*/*"
-}
 
 resource "aws_lambda_permission" "api_gateway_get_permission" {
   statement_id  = "AllowAPIGatewayToInvokeGet"

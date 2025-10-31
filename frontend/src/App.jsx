@@ -5,16 +5,17 @@ import SavingsGoals from './SavingsGoals';
 import MicroLoans from './MicroLoans';
 import PaymentSimulator from './PaymentSimulator';
 import DebtOptimiser from './DebtOptimiser';
-import Dashboard from './Dashboard';
-import TransactionHistory from './TransactionHistory';
-import Spinner from './Spinner';
 import Wallet from './Wallet';
+import Dashboard from './Dashboard';
+import AdminTools from './AdminTools'; // <-- 1. IMPORT ADMIN
+import DemoGuide from './DemoGuide';   // <-- 2. IMPORT GUIDE
 // Import Icons
 import {
-  HomeIcon, WalletIcon, BanknotesIcon, CreditCardIcon, ArrowsRightLeftIcon, ScaleIcon
+  HomeIcon, WalletIcon, BanknotesIcon, CreditCardIcon, 
+  ArrowsRightLeftIcon, ScaleIcon, WrenchScrewdriverIcon // <-- 3. IMPORT NEW ICON
 } from '@heroicons/react/24/outline';
-// Import the context hook and shared helper
-import { useWallet, formatCurrency } from './contexts/WalletContext';
+// Import context
+import { useWallet } from './contexts/WalletContext';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -71,6 +72,8 @@ function App() {
       case 'optimiser':
         // No props needed, DebtOptimiser will use useWallet()
         return <DebtOptimiser />;
+        case 'admin': // <-- 4. ADD ADMIN CASE
+        return <AdminTools />;
       default:
         return null;
     }
@@ -78,7 +81,7 @@ function App() {
 
   // --- Main JSX Structure ---
   return (
-    <div className="max-w-3xl mx-auto my-8 p-8 bg-white rounded-lg shadow-md text-neutral-800">
+    <div className="max-w-4xl mx-auto my-8 p-8 bg-white rounded-lg shadow-md text-neutral-800">
       <Toaster position="top-center" reverseOrder={false} />
       
       <header className="text-center mb-6">
@@ -94,6 +97,7 @@ function App() {
         { id: 'loans', label: 'Loans', Icon: CreditCardIcon },
         { id: 'payments', label: 'Payments', Icon: ArrowsRightLeftIcon },
         { id: 'optimiser', label: 'Debt Plan', Icon: ScaleIcon },
+        { id: 'admin', label: 'Admin Tools', Icon: WrenchScrewdriverIcon },
       ].map((tab) => (
         <button
           key={tab.id}
@@ -112,6 +116,11 @@ function App() {
 
       {/* Main Content Area */}
       <main>
+        {/* --- 6. ADD DEMO GUIDE --- */}
+        {/* Only show the guide if no wallet is loaded */}
+        {!wallet && (
+          <DemoGuide />
+        )}
         {/* Render the content for the active tab */}
         {renderTabContent()}
       </main>
