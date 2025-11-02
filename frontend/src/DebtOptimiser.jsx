@@ -9,7 +9,22 @@ import { BanknotesIcon } from '@heroicons/react/24/outline';
 import WalletPrompt from './WalletPrompt';
 
 // --- (CustomTooltip helper - no changes) ---
-const CustomTooltip = ({ active, payload, label }) => { /* ... */ };
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0];
+    const isTime = data.dataKey === 'Payoff Time (Months)';
+    const value = isTime ? `${data.value} months` : formatCurrency(data.value);
+    const name = isTime ? "Time" : "Interest";
+      
+    return (
+      <div className="p-2 bg-white border border-neutral-300 rounded-md shadow-lg text-sm">
+        <p className="label font-semibold text-neutral-700">{`${label}`}</p>
+        <p className="intro text-neutral-600">{`${name} : ${value}`}</p>
+      </div>
+    );
+  }
+  return null;
+};
 
 function DebtOptimiser() {
   // --- 2. Get authorizedFetch from context ---
@@ -76,7 +91,19 @@ function DebtOptimiser() {
   // --- (useEffect for chart data - no changes) ---
   useEffect(() => {
     if (results) {
-      // ... (chart data logic)
+      const data = [
+        {
+          name: 'Avalanche',
+          'Payoff Time (Months)': parseInt(results.avalanche_plan.months_to_payoff, 10), // <-- FIX
+          'Total Interest Paid': parseFloat(results.avalanche_plan.total_interest_paid),
+        },
+        {
+          name: 'Snowball',
+          'Payoff Time (Months)': parseInt(results.snowball_plan.months_to_payoff, 10), // <-- FIX
+          'Total Interest Paid': parseFloat(results.snowball_plan.total_interest_paid),
+        },
+      ];
+      setChartData(data);
     } else {
       setChartData([]);
     }

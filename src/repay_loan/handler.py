@@ -88,11 +88,11 @@ def repay_loan(event, context):
             loan_item = response.get('Item')
 
             if not loan_item:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Loan not found."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Loan not found."}))
                 return { "statusCode": 404, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Loan not found."}) }
             
             if loan_item.get('status') != 'APPROVED':
-                 logger.warn(json.dumps({**log_context, "status": "warn", "loan_status": loan_item.get('status'), "message": "Loan is not in 'APPROVED' state."}))
+                 logger.warning(json.dumps({**log_context, "status": "warn", "loan_status": loan_item.get('status'), "message": "Loan is not in 'APPROVED' state."}))
                  return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Loan is not in 'APPROVED' state."}) }
             
             wallet_id = loan_item.get('wallet_id')
@@ -110,7 +110,7 @@ def repay_loan(event, context):
                 amount_to_pay = remaining_balance
             
             if amount_to_pay <= 0:
-                logger.warn(json.dumps({**log_context, "status": "warn", "remaining_balance": str(remaining_balance), "message": "Loan already paid off."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "remaining_balance": str(remaining_balance), "message": "Loan already paid off."}))
                 return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "This loan has already been paid off."}) }
 
             # 3. Publish the repayment request event

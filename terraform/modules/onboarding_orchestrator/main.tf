@@ -120,6 +120,7 @@ resource "aws_lambda_function" "start_onboarding_lambda" {
   source_code_hash = data.archive_file.start_onboarding_zip.output_base64sha256
   handler          = "handler.start_onboarding"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -143,6 +144,7 @@ resource "aws_lambda_function" "get_onboarding_status_lambda" {
   source_code_hash = data.archive_file.get_onboarding_status_zip.output_base64sha256
   handler          = "handler.get_onboarding_status"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -165,6 +167,7 @@ resource "aws_lambda_function" "manual_review_handler_lambda" {
   source_code_hash = data.archive_file.manual_review_handler_zip.output_base64sha256
   handler          = "handler.manual_review"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -187,6 +190,7 @@ resource "aws_lambda_function" "verify_id_mock_lambda" {
   source_code_hash = data.archive_file.verify_id_mock_zip.output_base64sha256
   handler          = "handler.verify_id"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -208,6 +212,7 @@ resource "aws_lambda_function" "credit_check_mock_lambda" {
   source_code_hash = data.archive_file.credit_check_mock_zip.output_base64sha256
   handler          = "handler.credit_check"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -229,6 +234,7 @@ resource "aws_lambda_function" "provision_account_lambda" {
   source_code_hash = data.archive_file.provision_account_zip.output_base64sha256
   handler          = "handler.provision_account"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {

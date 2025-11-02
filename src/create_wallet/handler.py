@@ -3,11 +3,11 @@ import os
 import boto3
 import uuid
 import time
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from botocore.exceptions import ClientError
-import logging # <-- 1. Import logging
+import logging
 
-# --- 2. Set up logger ---
+# --- Set up logger ---
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 # ---
@@ -15,22 +15,18 @@ logger.setLevel(logging.INFO)
 # --- Environment Variables ---
 TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME')
 LOG_TABLE_NAME = os.environ.get('TRANSACTIONS_LOG_TABLE_NAME')
-ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
+ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*") # Not used by this Lambda, but good practice
 
-# --- (CORS Headers - no changes) ---
-OPTIONS_CORS_HEADERS = {
-    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Credentials": True
-}
+# --- CORS Headers ---
+# Note: This Lambda is now private and not called by API Gateway,
+# but we'll keep the headers for potential future debugging.
 POST_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Credentials": True
 }
 # ---
 
-# --- (DecimalEncoder - no changes) ---
+# --- DecimalEncoder ---
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, Decimal):
@@ -38,7 +34,7 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(o)
 # ---
 
-# --- 3. Update log_transaction to use a logger ---
+# --- Transaction Logging Helper ---
 def log_transaction(log_table, wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
     if not log_table:
         logger.warn(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
@@ -78,104 +74,80 @@ def log_transaction(log_table, wallet_id, tx_type, amount, new_balance=None, rel
         logger.error(json.dumps(log_message))
 # ---
 
-def credit_wallet(event, context):
+# --- THIS IS THE CORRECT FUNCTION ---
+def create_wallet(event, context):
     """
-    Credits (adds) a specified amount to the wallet.
+    Creates a new digital wallet with a zero balance.
+    This handler is invoked by the Step Function, not API Gateway.
     """
     
-    # --- 4. Initialize boto3 clients inside the handler ---
+    # --- Initialize boto3 clients inside the handler ---
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(TABLE_NAME) if TABLE_NAME else None
     log_table = dynamodb.Table(LOG_TABLE_NAME) if LOG_TABLE_NAME else None
-    # ---
     
-    # --- (CORS Preflight Check - no changes) ---
-    http_method = event.get('httpMethod', '').upper()
-    if http_method == 'OPTIONS':
-        logger.info("Handling OPTIONS preflight request for credit_wallet")
-        return { "statusCode": 200, "headers": OPTIONS_CORS_HEADERS, "body": "" }
-
+    log_context = {"action": "create_wallet"}
+    
     if not table or not log_table:
         log_message = {
+            **log_context,
             "status": "error",
-            "action": "credit_wallet",
             "message": "FATAL: Environment variables not set."
         }
         logger.error(json.dumps(log_message))
-        return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error."}) }
+        # This error will be returned to the Step Function
+        raise Exception("Server configuration error.")
 
-    if http_method == 'POST':
-        wallet_id = "unknown"
-        try:
-            wallet_id = unquote(event['pathParameters']['wallet_id']).strip()
-            body = json.loads(event.get('body', '{}'))
-            amount = Decimal(body.get('amount', '0.00'))
+    try:
+        wallet_id = str(uuid.uuid4())
+        timestamp = int(time.time())
+        new_balance = Decimal('0.00')
+        
+        log_context["wallet_id"] = wallet_id
+        
+        item = {
+            'wallet_id': wallet_id,
+            'balance': new_balance,
+            'currency': 'USD',
+            'created_at': timestamp,
+            'updated_at': timestamp
+        }
+        
+        table.put_item(Item=item)
+        
+        logger.info(json.dumps({**log_context, "status": "info", "message": "New wallet created in DynamoDB."}))
 
-            if amount <= 0:
-                raise ValueError("Credit amount must be positive.")
+        # Log this as the first transaction
+        log_transaction(
+            log_table=log_table,
+            wallet_id=wallet_id,
+            tx_type="WALLET_CREATED",
+            amount=Decimal('0.00'),
+            new_balance=new_balance,
+            related_id=wallet_id
+        )
+        
+        # Return a 201 response so the Step Function knows it succeeded
+        return {
+            "statusCode": 201,
+            "headers": POST_CORS_HEADERS,
+            "body": json.dumps({"message": "Wallet created successfully!", "wallet": item}, cls=DecimalEncoder)
+        }
 
-            log_message = {
-                "status": "info",
-                "action": "credit_wallet",
-                "wallet_id": wallet_id,
-                "amount": str(amount)
-            }
-            logger.info(json.dumps(log_message))
-
-            response = table.update_item(
-                Key={'wallet_id': wallet_id},
-                UpdateExpression="SET balance = balance + :amount",
-                ExpressionAttributeValues={':amount': amount},
-                ConditionExpression="attribute_exists(wallet_id)",
-                ReturnValues="UPDATED_NEW"
-            )
-            
-            new_balance = response.get('Attributes', {}).get('balance')
-            
-            # Log this transaction
-            log_transaction(
-                log_table=log_table,
-                wallet_id=wallet_id,
-                tx_type="CREDIT",
-                amount=amount,
-                new_balance=new_balance
-            )
-
-            return {
-                "statusCode": 200,
-                "headers": POST_CORS_HEADERS,
-                "body": json.dumps({"message": "Credit successful!", "balance": new_balance}, cls=DecimalEncoder)
-            }
-            
-        except (ValueError, TypeError, InvalidOperation) as ve:
-             log_message = {
-                "status": "error",
-                "action": "credit_wallet",
-                "wallet_id": wallet_id,
-                "error_message": str(ve)
-             }
-             logger.error(json.dumps(log_message))
-             return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Invalid input: {str(ve)}"}) }
-        except ClientError as e:
-            log_message = {
-                "status": "error",
-                "action": "credit_wallet",
-                "wallet_id": wallet_id,
-                "error_code": e.response['Error']['Code'],
-                "error_message": str(e)
-            }
-            logger.error(json.dumps(log_message))
-            if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                return { "statusCode": 404, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Wallet not found."}) }
-            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Database error.", "error": str(e)}) }
-        except Exception as e:
-            log_message = {
-                "status": "error",
-                "action": "credit_wallet",
-                "wallet_id": wallet_id,
-                "error_message": str(e)
-            }
-            logger.error(json.dumps(log_message))
-            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "An unexpected error occurred.", "error": str(e)}) }
-    else:
-         return { "statusCode": 405, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Method {http_method} not allowed."}) }
+    except ClientError as e:
+        log_message = {
+            **log_context,
+            "status": "error",
+            "error_code": e.response['Error']['Code'],
+            "error_message": str(e)
+        }
+        logger.error(json.dumps(log_message))
+        raise e # Re-raise to fail the Step Function task
+    except Exception as e:
+        log_message = {
+            **log_context,
+            "status": "error",
+            "error_message": str(e)
+        }
+        logger.error(json.dumps(log_message))
+        raise e # Re-raise to fail the Step Function task

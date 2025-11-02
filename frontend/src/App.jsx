@@ -20,6 +20,7 @@ import {
 // Import context
 import { useWallet } from './contexts/WalletContext';
 
+
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   

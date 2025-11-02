@@ -41,7 +41,7 @@ class DecimalEncoder(json.JSONEncoder):
 # --- 3. Update log_transaction to use a logger ---
 def log_transaction(log_table, wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
     if not log_table:
-        logger.warn(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
+        logger.warning(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
         return
     try:
         timestamp = int(time.time())

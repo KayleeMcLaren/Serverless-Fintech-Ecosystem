@@ -100,6 +100,7 @@ resource "aws_lambda_function" "request_payment_lambda" {
   source_code_hash = data.archive_file.request_payment_zip.output_base64sha256
   handler          = "handler.request_payment"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -124,6 +125,7 @@ resource "aws_lambda_function" "get_transaction_status_lambda" {
   source_code_hash = data.archive_file.get_transaction_status_zip.output_base64sha256
   handler          = "handler.get_transaction_status"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -147,6 +149,7 @@ resource "aws_lambda_function" "get_payments_by_wallet_lambda" {
   source_code_hash = data.archive_file.get_payments_by_wallet_zip.output_base64sha256
   handler          = "handler.get_payments_by_wallet"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -174,6 +177,7 @@ resource "aws_lambda_function" "update_transaction_status_lambda" {
   source_code_hash = data.archive_file.update_transaction_status_zip.output_base64sha256
   handler          = "handler.update_transaction_status"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {

@@ -109,6 +109,7 @@ resource "aws_lambda_function" "create_wallet_lambda" {
   source_code_hash = data.archive_file.create_wallet_zip.output_base64sha256
   handler          = "handler.create_wallet"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -132,6 +133,7 @@ resource "aws_lambda_function" "get_wallet_lambda" {
   source_code_hash = data.archive_file.get_wallet_zip.output_base64sha256
   handler          = "handler.get_wallet"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -155,6 +157,7 @@ resource "aws_lambda_function" "credit_wallet_lambda" {
   source_code_hash = data.archive_file.credit_wallet_zip.output_base64sha256
   handler          = "handler.credit_wallet"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -178,6 +181,7 @@ resource "aws_lambda_function" "debit_wallet_lambda" {
   source_code_hash = data.archive_file.debit_wallet_zip.output_base64sha256
   handler          = "handler.debit_wallet"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -201,6 +205,7 @@ resource "aws_lambda_function" "get_wallet_transactions_lambda" {
   source_code_hash = data.archive_file.get_wallet_transactions_zip.output_base64sha256
   handler          = "handler.get_wallet_transactions"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -228,6 +233,7 @@ resource "aws_lambda_function" "process_loan_approval_lambda" {
   source_code_hash = data.archive_file.process_loan_approval_zip.output_base64sha256
   handler          = "handler.process_loan_approval"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -250,6 +256,7 @@ resource "aws_lambda_function" "process_payment_request_lambda" {
   source_code_hash = data.archive_file.process_payment_request_zip.output_base64sha256
   handler          = "handler.process_payment_request"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {

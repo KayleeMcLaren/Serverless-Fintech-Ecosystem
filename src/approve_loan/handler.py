@@ -116,7 +116,7 @@ def approve_loan(event, context):
             log_context["error_code"] = error_code
             
             if error_code == 'ConditionalCheckFailedException':
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Loan was not in PENDING state."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Loan was not in PENDING state."}))
                 return {
                     "statusCode": 409, # Conflict
                     "headers": POST_CORS_HEADERS,

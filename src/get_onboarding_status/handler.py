@@ -72,7 +72,7 @@ def get_onboarding_status(event, context):
             user_item = response.get('Item')
 
             if not user_item:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "User application not found."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "User application not found."}))
                 return {
                     "statusCode": 404,
                     "headers": GET_CORS_HEADERS,

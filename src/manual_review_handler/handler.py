@@ -71,12 +71,12 @@ def manual_review(event, context):
             user_item = response.get('Item')
 
             if not user_item:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "User not found."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "User not found."}))
                 return { "statusCode": 404, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "User not found."}) }
             
             task_token = user_item.get('sfn_task_token')
             if not task_token:
-                 logger.warn(json.dumps({**log_context, "status": "warn", "message": "User is not awaiting manual review or token is missing."}))
+                 logger.warning(json.dumps({**log_context, "status": "warn", "message": "User is not awaiting manual review or token is missing."}))
                  return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "User is not awaiting manual review or token is missing."}) }
 
             # 2. Update user status in DynamoDB
@@ -118,10 +118,10 @@ def manual_review(event, context):
         except ClientError as ce:
              log_context["error_code"] = ce.response['Error']['Code']
              if ce.response['Error']['Code'] == 'TaskTimedOut':
-                 logger.warn(json.dumps({**log_context, "status": "warn", "message": "Task token has timed out."}))
+                 logger.warning(json.dumps({**log_context, "status": "warn", "message": "Task token has timed out."}))
                  return { "statusCode": 410, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "This task has timed out."}) }
              if ce.response['Error']['Code'] == 'TaskDoesNotExist':
-                 logger.warn(json.dumps({**log_context, "status": "warn", "message": "Task token is invalid or already used."}))
+                 logger.warning(json.dumps({**log_context, "status": "warn", "message": "Task token is invalid or already used."}))
                  return { "statusCode": 404, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "This task token is invalid or has already been used."}) }
              
              logger.error(json.dumps({**log_context, "status": "error", "error_message": str(ce)}))

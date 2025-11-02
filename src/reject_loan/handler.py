@@ -4,6 +4,7 @@ import boto3
 from urllib.parse import unquote
 from botocore.exceptions import ClientError
 import logging # <-- 1. Import logging
+from decimal import Decimal
 
 # --- 2. Set up logger ---
 logger = logging.getLogger()
@@ -26,6 +27,12 @@ POST_CORS_HEADERS = {
     "Access-Control-Allow-Credentials": True
 }
 # ---
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, Decimal):
+            return str(o)
+        return super(DecimalEncoder, self).default(o)
 
 def reject_loan(event, context):
     """
@@ -82,7 +89,7 @@ def reject_loan(event, context):
             return {
                 "statusCode": 200,
                 "headers": POST_CORS_HEADERS,
-                "body": json.dumps({"message": "Loan rejected.", "loan": updated_item})
+                "body": json.dumps({"message": "Loan rejected.", "loan": updated_item}, cls=DecimalEncoder)
             }
 
         except ClientError as e:
@@ -90,7 +97,7 @@ def reject_loan(event, context):
             log_context["error_code"] = error_code
             
             if error_code == 'ConditionalCheckFailedException':
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Loan was not in PENDING state."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Loan was not in PENDING state."}))
                 return {
                     "statusCode": 409, # Conflict
                     "headers": POST_CORS_HEADERS,

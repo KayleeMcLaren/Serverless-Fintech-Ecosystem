@@ -26,7 +26,7 @@ class DecimalEncoder(json.JSONEncoder):
 # --- 3. Update log_transaction to use a logger ---
 def log_transaction(log_table, wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
     if not log_table:
-        logger.warn(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
+        logger.warning(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
         return
     try:
         timestamp = int(time.time())
@@ -125,7 +125,7 @@ def process_payment_request(event, context):
         try:
             sns_message_str = record.get('Sns', {}).get('Message')
             if not sns_message_str:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Skipping record: Missing SNS message body."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Skipping record: Missing SNS message body."}))
                 continue
 
             sns_message = json.loads(sns_message_str)
@@ -151,7 +151,7 @@ def process_payment_request(event, context):
                 related_id = event_details.get('loan_id')
                 log_details = {"loan_id": related_id}
             else:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Skipping unhandled event type."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Skipping unhandled event type."}))
                 continue 
 
             log_context["related_id"] = related_id
@@ -199,7 +199,7 @@ def process_payment_request(event, context):
                 log_context["error_code"] = error_code
                 
                 if error_code == 'ConditionalCheckFailedException':
-                    logger.warn(json.dumps({**log_context, "status": "warn", "message": "Insufficient funds."}))
+                    logger.warning(json.dumps({**log_context, "status": "warn", "message": "Insufficient funds."}))
                     publish_event(sns_client, fail_event, event_details, "Insufficient funds.")
                 else:
                     logger.error(json.dumps({**log_context, "status": "error", "message": f"DynamoDB error: {str(e)}"}))

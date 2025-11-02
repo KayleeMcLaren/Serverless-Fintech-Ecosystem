@@ -35,7 +35,7 @@ LOG_TABLE_NAME = os.environ.get('TRANSACTIONS_LOG_TABLE_NAME')
 # --- Transaction Logging Helper ---
 def log_transaction(log_table, wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
     if not log_table:
-        logger.warn(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
+        logger.warning(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
         return
     try:
         timestamp = int(time.time())
@@ -133,7 +133,7 @@ def add_to_savings_goal(event, context):
                 
                 current_balance = wallet_item.get('balance', Decimal('0'))
                 if current_balance < amount:
-                    logger.warn(json.dumps({**log_context, "status": "warn", "current_balance": str(current_balance), "message": "Insufficient funds."}))
+                    logger.warning(json.dumps({**log_context, "status": "warn", "current_balance": str(current_balance), "message": "Insufficient funds."}))
                     return {
                         "statusCode": 400, "headers": POST_CORS_HEADERS,
                         "body": json.dumps({"message": "Insufficient funds."})
@@ -149,9 +149,9 @@ def add_to_savings_goal(event, context):
                 if goal_item:
                     goal_name_for_log = goal_item.get('goal_name', 'Savings Goal')
                 else:
-                    logger.warn(json.dumps({**log_context, "status": "warn", "message": "Goal not found, transaction will likely fail."}))
+                    logger.warning(json.dumps({**log_context, "status": "warn", "message": "Goal not found, transaction will likely fail."}))
             except Exception as get_e:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": f"Could not fetch goal name for logging: {str(get_e)}"}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": f"Could not fetch goal name for logging: {str(get_e)}"}))
 
             logger.info(json.dumps({**log_context, "status": "info", "message": "Attempting transaction."}))
 
@@ -206,7 +206,7 @@ def add_to_savings_goal(event, context):
             if error_code == 'TransactionCanceledException':
                 reasons = e.response.get('CancellationReasons', [])
                 if any(r.get('Code') == 'ConditionalCheckFailed' for r in reasons):
-                    logger.warn(json.dumps({**log_context, "status": "warn", "message": "Transaction failed: ConditionalCheckFailed."}))
+                    logger.warning(json.dumps({**log_context, "status": "warn", "message": "Transaction failed: ConditionalCheckFailed."}))
                     return {
                         "statusCode": 400, "headers": POST_CORS_HEADERS,
                         "body": json.dumps({"message": "Transaction failed. Savings goal not found or wallet ID mismatch."})

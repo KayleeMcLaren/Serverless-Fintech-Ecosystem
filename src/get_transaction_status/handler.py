@@ -71,7 +71,7 @@ def get_transaction_status(event, context):
             item = response.get('Item')
 
             if not item:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Transaction not found."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Transaction not found."}))
                 return {
                     "statusCode": 404,
                     "headers": GET_CORS_HEADERS,

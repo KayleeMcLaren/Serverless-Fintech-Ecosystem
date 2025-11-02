@@ -174,13 +174,13 @@ def calculate_repayment_plan(event, context):
             loans = response.get('Items', [])
 
             if not loans:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "No approved loans found."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "No approved loans found."}))
                 return { "statusCode": 404, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "No approved loans found for this wallet."}) }
 
             # 2. Check if budget is sufficient
             total_minimum_payment = sum(l.get('minimum_payment', Decimal('0')) for l in loans)
             if monthly_budget < total_minimum_payment:
-                logger.warn(json.dumps({**log_context, "status": "warn", "total_minimum_payment": str(total_minimum_payment), "message": "Budget is less than total minimum payments."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "total_minimum_payment": str(total_minimum_payment), "message": "Budget is less than total minimum payments."}))
                 return {
                     "statusCode": 400,
                     "headers": POST_CORS_HEADERS,

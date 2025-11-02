@@ -40,7 +40,7 @@ class DecimalEncoder(json.JSONEncoder):
 # --- Transaction Logging Helper ---
 def log_transaction(log_table, wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
     if not log_table:
-        logger.warn(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
+        logger.warning(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
         return
     try:
         timestamp = int(time.time())
@@ -120,7 +120,7 @@ def delete_savings_goal(event, context):
             goal_item = response.get('Item')
 
             if not goal_item:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Savings goal not found."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Savings goal not found."}))
                 return {
                     "statusCode": 404,
                     "headers": DELETE_CORS_HEADERS,

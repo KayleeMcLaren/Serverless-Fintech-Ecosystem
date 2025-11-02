@@ -26,7 +26,7 @@ class DecimalEncoder(json.JSONEncoder):
 # --- 3. Update log_transaction to use a logger ---
 def log_transaction(log_table, wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
     if not log_table:
-        logger.warn(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
+        logger.warning(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
         return
     try:
         timestamp = int(time.time())
@@ -90,7 +90,7 @@ def process_loan_approval(event, context):
         try:
             sns_message_str = record.get('Sns', {}).get('Message')
             if not sns_message_str:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Skipping record: Missing SNS message body."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Skipping record: Missing SNS message body."}))
                 continue
 
             sns_message = json.loads(sns_message_str)
@@ -113,7 +113,7 @@ def process_loan_approval(event, context):
 
                 amount = Decimal(amount_str)
                 if amount <= 0:
-                    logger.warn(json.dumps({**log_context, "status": "warn", "message": f"Loan amount is not positive: {amount}"}))
+                    logger.warning(json.dumps({**log_context, "status": "warn", "message": f"Loan amount is not positive: {amount}"}))
                     continue
 
                 logger.info(json.dumps({**log_context, "status": "info", "amount": str(amount), "message": "Processing loan approval."}))
@@ -140,7 +140,7 @@ def process_loan_approval(event, context):
                     related_id=loan_id
                 )
             else:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": f"Skipping unhandled event type: {event_type}"}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": f"Skipping unhandled event type: {event_type}"}))
 
         except (ValueError, InvalidOperation, TypeError) as val_err:
              logger.error(json.dumps({**log_context, "status": "error", "message": f"Invalid data error: {str(val_err)}"}))

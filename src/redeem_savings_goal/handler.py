@@ -40,7 +40,7 @@ class DecimalEncoder(json.JSONEncoder):
 # --- Transaction Logging Helper ---
 def log_transaction(log_table, wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
     if not log_table:
-        logger.warn(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
+        logger.warning(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
         return
     try:
         timestamp = int(time.time())
@@ -120,7 +120,7 @@ def redeem_savings_goal(event, context):
             goal_item = response.get('Item')
 
             if not goal_item:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Savings goal not found."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Savings goal not found."}))
                 return { "statusCode": 404, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Savings goal not found."}) }
 
             current_amount = goal_item.get('current_amount', Decimal('0'))
@@ -136,7 +136,7 @@ def redeem_savings_goal(event, context):
 
             # 2. Check if goal is actually complete
             if current_amount < target_amount:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Goal not yet complete. Cannot redeem."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Goal not yet complete. Cannot redeem."}))
                 return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Goal is not yet complete. Cannot redeem."}) }
             
             if not wallet_id:

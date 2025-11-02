@@ -43,7 +43,7 @@ def update_loan_repayment_status(event, context):
         try:
             sns_message_str = record.get('Sns', {}).get('Message')
             if not sns_message_str:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Skipping record: Missing SNS message body."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Skipping record: Missing SNS message body."}))
                 continue
 
             sns_message = json.loads(sns_message_str)
@@ -99,17 +99,17 @@ def update_loan_repayment_status(event, context):
             elif event_type == 'LOAN_REPAYMENT_FAILED':
                 reason = sns_message.get('reason', 'Unknown')
                 log_context["reason"] = reason
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Processing FAILED repayment. No action taken."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Processing FAILED repayment. No action taken."}))
             
             else:
-                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Skipping unhandled event type."}))
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Skipping unhandled event type."}))
 
         except (ValueError, InvalidOperation, TypeError) as val_err:
              logger.error(json.dumps({**log_context, "status": "error", "message": f"Invalid data error: {str(val_err)}"}))
         except ClientError as ce:
              log_context["error_code"] = ce.response['Error']['Code']
              if ce.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                 logger.warn(json.dumps({**log_context, "status": "warn", "message": "Condition failed (loan likely not in APPROVED state)."}))
+                 logger.warning(json.dumps({**log_context, "status": "warn", "message": "Condition failed (loan likely not in APPROVED state)."}))
              else:
                  logger.error(json.dumps({**log_context, "status": "error", "message": f"DynamoDB error: {str(ce)}"}))
                  raise ce # Force SNS to retry
