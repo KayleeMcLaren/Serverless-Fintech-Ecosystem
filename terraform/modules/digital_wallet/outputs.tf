@@ -3,14 +3,18 @@ output "api_gateway_config_hash" {
   value = sha1(jsonencode([
     # /wallet
     aws_api_gateway_resource.wallet_resource,
+    
+    # (create_wallet resources were removed)
 
     # /wallet/{wallet_id}
     aws_api_gateway_resource.wallet_id_resource,
     aws_api_gateway_method.get_wallet_method,
     aws_api_gateway_integration.get_lambda_integration,
+    
+    # --- ADDED: OPTIONS for GET /wallet/{id} ---
     aws_api_gateway_method.get_wallet_options_method,
-    aws_api_gateway_integration.get_wallet_options_integration,
     aws_api_gateway_method_response.get_wallet_options_200,
+    aws_api_gateway_integration.get_wallet_options_integration,
     aws_api_gateway_integration_response.get_wallet_options_integration_response,
 
     # /wallet/{wallet_id}/credit
@@ -35,9 +39,11 @@ output "api_gateway_config_hash" {
     aws_api_gateway_resource.transactions_resource,
     aws_api_gateway_method.get_transactions_method,
     aws_api_gateway_integration.get_transactions_integration,
+    
+    # --- ADDED: OPTIONS for GET /wallet/{id}/transactions ---
     aws_api_gateway_method.get_transactions_options_method,
-    aws_api_gateway_integration.get_transactions_options_integration,
     aws_api_gateway_method_response.get_transactions_options_200,
+    aws_api_gateway_integration.get_transactions_options_integration,
     aws_api_gateway_integration_response.get_transactions_options_integration_response,
   ]))
 }
@@ -53,6 +59,7 @@ output "wallet_table_arn" {
   value       = var.dynamodb_table_arn
 }
 
+# --- Expose create_wallet Lambda ARN for Step Function ---
 output "create_wallet_lambda_arn" {
   description = "The ARN of the create_wallet Lambda function."
   value       = aws_lambda_function.create_wallet_lambda.arn

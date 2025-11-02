@@ -105,7 +105,11 @@ def request_payment(event, context):
             return {
                 "statusCode": 202, # Accepted
                 "headers": POST_CORS_HEADERS,
-                "body": json.dumps(response_body, cls=DecimalEncoder)
+                "body": json.dumps({
+                    "message": "Payment request received and is processing.",
+                    "transaction_id": transaction_id,
+                    "transaction": item 
+                }, cls=DecimalEncoder)
             }
         except (ValueError, TypeError) as ve:
             print(f"Input Error requesting payment: {ve}")

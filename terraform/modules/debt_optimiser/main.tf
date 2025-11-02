@@ -96,7 +96,8 @@ resource "aws_api_gateway_method" "calculate_repayment_plan_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.debt_optimiser_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"      # <-- LINE 1
+  authorizer_id = var.api_gateway_authorizer_id # <-- LINE 2
 }
 
 resource "aws_api_gateway_integration" "calculate_repayment_plan_integration" {

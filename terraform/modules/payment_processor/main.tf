@@ -198,7 +198,8 @@ resource "aws_api_gateway_method" "request_payment_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.payment_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"      # <-- LINE 1
+  authorizer_id = var.api_gateway_authorizer_id # <-- LINE 2
 }
 resource "aws_api_gateway_integration" "request_payment_integration" {
   rest_api_id             = var.api_gateway_id
@@ -253,7 +254,8 @@ resource "aws_api_gateway_method" "get_transaction_status_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.transaction_id_resource.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"      # <-- LINE 1
+  authorizer_id = var.api_gateway_authorizer_id # <-- LINE 2
 }
 resource "aws_api_gateway_integration" "get_transaction_status_integration" {
   rest_api_id             = var.api_gateway_id
@@ -264,7 +266,7 @@ resource "aws_api_gateway_integration" "get_transaction_status_integration" {
   uri                     = aws_lambda_function.get_transaction_status_lambda.invoke_arn
 }
 
-# --- API: OPTIONS /payment/{transaction_id} (CORS) ---
+# --- NEW: OPTIONS for GET /payment/{transaction_id} (CORS) ---
 resource "aws_api_gateway_method" "get_transaction_status_options_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.transaction_id_resource.id
@@ -295,6 +297,7 @@ resource "aws_api_gateway_integration_response" "get_transaction_status_options_
   response_templates = { "application/json" = "" }
   depends_on = [aws_api_gateway_integration.get_transaction_status_options_integration]
 }
+# --- END NEW BLOCK ---
 
 # --- API: /payment/by-wallet/{wallet_id} ---
 resource "aws_api_gateway_resource" "payment_by_wallet_resource" {
@@ -313,7 +316,8 @@ resource "aws_api_gateway_method" "get_payments_by_wallet_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"      # <-- LINE 1
+  authorizer_id = var.api_gateway_authorizer_id # <-- LINE 2
 }
 resource "aws_api_gateway_integration" "get_payments_by_wallet_integration" {
   rest_api_id             = var.api_gateway_id
@@ -324,7 +328,7 @@ resource "aws_api_gateway_integration" "get_payments_by_wallet_integration" {
   uri                     = aws_lambda_function.get_payments_by_wallet_lambda.invoke_arn
 }
 
-# --- API: OPTIONS /payment/by-wallet/{wallet_id} (CORS) ---
+# --- NEW: OPTIONS for GET /payment/by-wallet/{wallet_id} (CORS) ---
 resource "aws_api_gateway_method" "get_payments_by_wallet_options_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.payment_by_wallet_id_resource.id
@@ -355,6 +359,7 @@ resource "aws_api_gateway_integration_response" "get_payments_by_wallet_options_
   response_templates = { "application/json" = "" }
   depends_on = [aws_api_gateway_integration.get_payments_by_wallet_options_integration]
 }
+# --- END NEW BLOCK ---
 
 ################################################################################
 # --- LAMBDA PERMISSIONS (API Gateway) ---

@@ -288,8 +288,10 @@ resource "aws_api_gateway_method" "apply_for_loan_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.loan_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
+
 resource "aws_api_gateway_integration" "apply_for_loan_integration" {
   rest_api_id             = var.api_gateway_id
   resource_id             = aws_api_gateway_resource.loan_resource.id
@@ -348,7 +350,8 @@ resource "aws_api_gateway_method" "get_loans_by_wallet_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.loan_by_wallet_id_resource.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
 resource "aws_api_gateway_integration" "get_loans_by_wallet_integration" {
   rest_api_id             = var.api_gateway_id
@@ -358,7 +361,38 @@ resource "aws_api_gateway_integration" "get_loans_by_wallet_integration" {
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.get_loans_by_wallet_lambda.invoke_arn
 }
-# (Skipping OPTIONS for simple GET)
+
+# --- OPTIONS for GET /loan/by-wallet/{wallet_id} ---
+resource "aws_api_gateway_method" "get_loans_by_wallet_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.loan_by_wallet_id_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_method_response" "get_loans_by_wallet_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.loan_by_wallet_id_resource.id
+   http_method   = aws_api_gateway_method.get_loans_by_wallet_options_method.http_method
+   status_code   = "200"
+   response_models = { "application/json" = "Empty" }
+   response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => true }
+}
+resource "aws_api_gateway_integration" "get_loans_by_wallet_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.loan_by_wallet_id_resource.id
+  http_method             = aws_api_gateway_method.get_loans_by_wallet_options_method.http_method
+  type                    = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+resource "aws_api_gateway_integration_response" "get_loans_by_wallet_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.loan_by_wallet_id_resource.id
+  http_method = aws_api_gateway_method.get_loans_by_wallet_options_method.http_method
+  status_code = aws_api_gateway_method_response.get_loans_by_wallet_options_200.status_code
+  response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => "'${v}'" }
+  response_templates = { "application/json" = "" }
+  depends_on = [aws_api_gateway_integration.get_loans_by_wallet_options_integration]
+}
 
 # --- API: /loan/{loan_id} ---
 resource "aws_api_gateway_resource" "loan_id_resource" {
@@ -372,7 +406,8 @@ resource "aws_api_gateway_method" "get_loan_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.loan_id_resource.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
 resource "aws_api_gateway_integration" "get_loan_integration" {
   rest_api_id             = var.api_gateway_id
@@ -382,7 +417,39 @@ resource "aws_api_gateway_integration" "get_loan_integration" {
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.get_loan_lambda.invoke_arn
 }
-# (Skipping OPTIONS for simple GET)
+
+# --- NEW: OPTIONS for GET /loan/{loan_id} ---
+resource "aws_api_gateway_method" "get_loan_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.loan_id_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_method_response" "get_loan_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.loan_id_resource.id
+   http_method   = aws_api_gateway_method.get_loan_options_method.http_method
+   status_code   = "200"
+   response_models = { "application/json" = "Empty" }
+   response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => true }
+}
+resource "aws_api_gateway_integration" "get_loan_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.loan_id_resource.id
+  http_method             = aws_api_gateway_method.get_loan_options_method.http_method
+  type                    = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+resource "aws_api_gateway_integration_response" "get_loan_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.loan_id_resource.id
+  http_method = aws_api_gateway_method.get_loan_options_method.http_method
+  status_code = aws_api_gateway_method_response.get_loan_options_200.status_code
+  response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => "'${v}'" }
+  response_templates = { "application/json" = "" }
+  depends_on = [aws_api_gateway_integration.get_loan_options_integration]
+}
+# --- END NEW BLOCK ---
 
 # --- API: /loan/{loan_id}/approve ---
 resource "aws_api_gateway_resource" "approve_loan_resource" {
@@ -396,7 +463,8 @@ resource "aws_api_gateway_method" "approve_loan_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.approve_loan_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"      # <-- LINE 1
+  authorizer_id = var.api_gateway_authorizer_id # <-- LINE 2
 }
 resource "aws_api_gateway_integration" "approve_loan_integration" {
   rest_api_id             = var.api_gateway_id
@@ -451,7 +519,8 @@ resource "aws_api_gateway_method" "reject_loan_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.reject_loan_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"      # <-- LINE 1
+  authorizer_id = var.api_gateway_authorizer_id # <-- LINE 2
 }
 resource "aws_api_gateway_integration" "reject_loan_integration" {
   rest_api_id             = var.api_gateway_id
@@ -506,7 +575,8 @@ resource "aws_api_gateway_method" "repay_loan_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.repay_loan_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"      # <-- LINE 1
+  authorizer_id = var.api_gateway_authorizer_id # <-- LINE 2
 }
 resource "aws_api_gateway_integration" "repay_loan_integration" {
   rest_api_id             = var.api_gateway_id

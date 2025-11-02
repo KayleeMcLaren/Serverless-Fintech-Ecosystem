@@ -42,3 +42,8 @@ variable "frontend_cors_origin" {
   description = "The allowed CORS origin for the frontend"
   type        = string
 }
+
+variable "api_gateway_authorizer_id" {
+  description = "The ID of the Cognito API Gateway Authorizer"
+  type        = string
+}
