@@ -11,25 +11,23 @@ WALLET_TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME')
 LOG_TABLE_NAME = os.environ.get('TRANSACTIONS_LOG_TABLE_NAME')
 SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN') # Payment events topic
 
-# --- AWS Resources ---
-dynamodb_resource = boto3.resource('dynamodb')
-sns = boto3.client('sns')
-wallet_table = dynamodb_resource.Table(WALLET_TABLE_NAME)
-log_table = dynamodb_resource.Table(LOG_TABLE_NAME) if LOG_TABLE_NAME else None
+# --- REMOVE BOTO3 CLIENTS FROM GLOBAL SCOPE ---
 
 class DecimalEncoder(json.JSONEncoder):
-    # ... (keep as is)
     def default(self, o):
         if isinstance(o, Decimal): return str(o)
         return super(DecimalEncoder, self).default(o)
 
 # --- Transaction Logging Helper ---
 def log_transaction(wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
-    # ... (keep as is)
-    if not log_table:
+    # --- FIX: Initialize boto3 inside the function ---
+    if not LOG_TABLE_NAME:
         print("Log table name not configured, skipping log.")
         return
     try:
+        log_table = boto3.resource('dynamodb').Table(LOG_TABLE_NAME)
+        # --- END FIX ---
+        
         timestamp = int(time.time())
         log_item = {
             'transaction_id': str(uuid.uuid4()), 'wallet_id': wallet_id,
@@ -46,29 +44,29 @@ def log_transaction(wallet_id, tx_type, amount, new_balance=None, related_id=Non
         print(f"ERROR logging transaction: {log_e}")
 
 # --- Event Publishing Helper ---
-def publish_event(event_type, event_details, reason=None): # Renamed var
+def publish_event(sns_client, event_type, event_details, reason=None): # Pass in sns_client
     message_body = {
         "event_type": event_type,
-        "details": event_details # Use a generic 'details' key
+        "details": event_details
     }
     if reason:
         message_body['reason'] = reason
     try:
-        sns.publish(
+        sns_client.publish( # Use passed-in client
             TopicArn=SNS_TOPIC_ARN,
             Message=json.dumps(message_body, cls=DecimalEncoder),
             Subject=f"Wallet Update: {event_type}",
             MessageAttributes={
                 'event_type': {
                     'DataType': 'String',
-                    'StringValue': event_type # Critical for filtering
+                    'StringValue': event_type
                 }
             }
         )
         print(f"Published {event_type} event")
     except Exception as pub_e:
          print(f"ERROR publishing {event_type} event: {pub_e}")
-         raise pub_e # Re-raise to fail the Lambda and force SNS retry
+         raise pub_e
 
 # --- Main Handler ---
 def process_payment_request(event, context):
@@ -76,6 +74,13 @@ def process_payment_request(event, context):
     Subscribes to 'PAYMENT_REQUESTED' AND 'LOAN_REPAYMENT_REQUESTED'.
     Debits wallet, logs transaction, and publishes result.
     """
+    
+    # --- FIX: Initialize boto3 clients inside the handler ---
+    dynamodb_resource = boto3.resource('dynamodb')
+    sns_client = boto3.client('sns') # Use 'sns_client' to avoid name clash
+    wallet_table = dynamodb_resource.Table(WALLET_TABLE_NAME) if WALLET_TABLE_NAME else None
+    # --- END FIX ---
+
     print(f"Received event: {json.dumps(event)}")
     for record in event['Records']:
         message_id = record.get('Sns', {}).get('MessageId', 'Unknown')
@@ -88,13 +93,11 @@ def process_payment_request(event, context):
             sns_message = json.loads(sns_message_str)
             event_type = sns_message.get('event_type')
             
-            ## Check for 'details' (from loan) OR 'transaction_details' (from payment)
             event_details = sns_message.get('details') or sns_message.get('transaction_details') or {}
             
             wallet_id = event_details.get('wallet_id')
             amount_str = event_details.get('amount', '0.00')
             
-            # Determine logging and response types based on incoming event
             if event_type == 'PAYMENT_REQUESTED':
                 log_type = 'PAYMENT_OUT'
                 success_event = 'PAYMENT_SUCCESSFUL'
@@ -109,22 +112,20 @@ def process_payment_request(event, context):
                 log_details = {"loan_id": related_id}
             else:
                 print(f"Skipping event type in message {message_id}: {event_type}")
-                continue # Not an event we handle
+                continue 
 
-            # --- Validation ---
             if not wallet_id or not amount_str or not related_id:
                 print(f"Invalid details in message {message_id}: {event_details}")
-                publish_event(fail_event, event_details, "Invalid message format received.")
+                publish_event(sns_client, fail_event, event_details, "Invalid message format received.")
                 continue
             amount = Decimal(amount_str)
             if amount <= 0:
                  print(f"Invalid amount in message {message_id}: {amount}")
-                 publish_event(fail_event, event_details, "Invalid amount.")
+                 publish_event(sns_client, fail_event, event_details, "Invalid amount.")
                  continue
 
             print(f"Processing {event_type} for wallet {wallet_id}, amount {amount}")
 
-            # --- 1. Attempt to debit the wallet ---
             try:
                 response = wallet_table.update_item(
                     Key={'wallet_id': wallet_id},
@@ -136,7 +137,6 @@ def process_payment_request(event, context):
                 new_balance = response.get('Attributes', {}).get('balance')
                 print(f"Successfully debited wallet {wallet_id}.")
 
-                # --- 2. Log Transaction ---
                 log_transaction(
                     wallet_id=wallet_id,
                     tx_type=log_type,
@@ -145,26 +145,24 @@ def process_payment_request(event, context):
                     related_id=related_id,
                     details=log_details
                 )
-
-                # --- 3. Publish SUCCESS event ---
-                publish_event(success_event, event_details)
+                publish_event(sns_client, success_event, event_details)
 
             except ClientError as e:
                 error_code = e.response['Error']['Code']
                 if error_code == 'ConditionalCheckFailedException':
                     print(f"Debit failed for wallet {wallet_id}: Insufficient funds.")
-                    publish_event(fail_event, event_details, "Insufficient funds.")
+                    publish_event(sns_client, fail_event, event_details, "Insufficient funds.")
                 else:
                     print(f"Debit failed: DynamoDB error: {e}")
-                    publish_event(fail_event, event_details, f"Wallet update error: {error_code}")
-                    raise e # Force retry for non-conditional errors
+                    publish_event(sns_client, fail_event, event_details, f"Wallet update error: {error_code}")
+                    raise e
             except Exception as debit_e:
                  print(f"Debit failed: Unexpected error: {debit_e}")
-                 publish_event(fail_event, event_details, f"Processing error: {str(debit_e)}")
-                 raise debit_e # Force retry
+                 publish_event(sns_client, fail_event, event_details, f"Processing error: {str(debit_e)}")
+                 raise debit_e
 
         except Exception as record_e:
              print(f"ERROR processing individual record {message_id}: {record_e}.")
-             raise record_e # Raise exception to make SNS retry this batch
+             raise record_e
 
     return {"statusCode": 200, "body": "Events processed."}
