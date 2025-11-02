@@ -255,7 +255,8 @@ resource "aws_api_gateway_method" "create_savings_goal_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.savings_goal_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
 resource "aws_api_gateway_integration" "create_savings_goal_integration" {
   rest_api_id             = var.api_gateway_id
@@ -315,7 +316,8 @@ resource "aws_api_gateway_method" "get_savings_goals_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.savings_by_wallet_id_resource.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
 resource "aws_api_gateway_integration" "get_savings_goals_integration" {
   rest_api_id             = var.api_gateway_id
@@ -325,7 +327,39 @@ resource "aws_api_gateway_integration" "get_savings_goals_integration" {
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.get_savings_goals_lambda.invoke_arn
 }
-# (Skipping OPTIONS for simple GET)
+
+# --- NEW: OPTIONS for GET /savings-goal/by-wallet/{wallet_id} ---
+resource "aws_api_gateway_method" "get_savings_goals_options_method" {
+  rest_api_id   = var.api_gateway_id
+  resource_id   = aws_api_gateway_resource.savings_by_wallet_id_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_method_response" "get_savings_goals_options_200" {
+   rest_api_id   = var.api_gateway_id
+   resource_id   = aws_api_gateway_resource.savings_by_wallet_id_resource.id
+   http_method   = aws_api_gateway_method.get_savings_goals_options_method.http_method
+   status_code   = "200"
+   response_models = { "application/json" = "Empty" }
+   response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => true }
+}
+resource "aws_api_gateway_integration" "get_savings_goals_options_integration" {
+  rest_api_id             = var.api_gateway_id
+  resource_id           = aws_api_gateway_resource.savings_by_wallet_id_resource.id
+  http_method             = aws_api_gateway_method.get_savings_goals_options_method.http_method
+  type                    = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+resource "aws_api_gateway_integration_response" "get_savings_goals_options_integration_response" {
+  rest_api_id = var.api_gateway_id
+  resource_id = aws_api_gateway_resource.savings_by_wallet_id_resource.id
+  http_method = aws_api_gateway_method.get_savings_goals_options_method.http_method
+  status_code = aws_api_gateway_method_response.get_savings_goals_options_200.status_code
+  response_parameters = { for k, v in local.cors_headers : "method.response.header.${k}" => "'${v}'" }
+  response_templates = { "application/json" = "" }
+  depends_on = [aws_api_gateway_integration.get_savings_goals_options_integration]
+}
+# --- END NEW BLOCK ---
 
 # --- API: /savings-goal/{goal_id} ---
 resource "aws_api_gateway_resource" "savings_goal_id_resource" {
@@ -339,7 +373,8 @@ resource "aws_api_gateway_method" "delete_savings_goal_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.savings_goal_id_resource.id
   http_method   = "DELETE"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
 resource "aws_api_gateway_integration" "delete_savings_goal_integration" {
   rest_api_id             = var.api_gateway_id
@@ -394,7 +429,8 @@ resource "aws_api_gateway_method" "add_to_goal_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.add_to_goal_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
 resource "aws_api_gateway_integration" "add_to_goal_integration" {
   rest_api_id             = var.api_gateway_id
@@ -449,7 +485,8 @@ resource "aws_api_gateway_method" "get_goal_transactions_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.goal_transactions_resource.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
 resource "aws_api_gateway_integration" "get_goal_transactions_integration" {
   rest_api_id             = var.api_gateway_id
@@ -460,7 +497,7 @@ resource "aws_api_gateway_integration" "get_goal_transactions_integration" {
   uri                     = aws_lambda_function.get_goal_transactions_lambda.invoke_arn
 }
 
-# --- API: OPTIONS /savings-goal/{goal_id}/transactions (CORS) ---
+# --- NEW: OPTIONS for GET /savings-goal/{goal_id}/transactions (CORS) ---
 resource "aws_api_gateway_method" "get_goal_transactions_options_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.goal_transactions_resource.id
@@ -491,6 +528,7 @@ resource "aws_api_gateway_integration_response" "get_goal_transactions_options_i
   response_templates = { "application/json" = "" }
   depends_on = [aws_api_gateway_integration.get_goal_transactions_options_integration]
 }
+# --- END NEW BLOCK ---
 
 # --- API: POST /savings-goal/{goal_id}/redeem ---
 resource "aws_api_gateway_resource" "redeem_goal_resource" {
@@ -503,7 +541,8 @@ resource "aws_api_gateway_method" "redeem_goal_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.redeem_goal_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"      # <-- LINE 1
+  authorizer_id = var.api_gateway_authorizer_id # <-- LINE 2
 }
 
 resource "aws_api_gateway_integration" "redeem_goal_integration" {

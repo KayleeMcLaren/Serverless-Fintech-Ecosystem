@@ -29,7 +29,7 @@ data "aws_iam_policy_document" "lambda_assume_role_policy" {
 }
 
 resource "aws_iam_role" "lambda_exec_role" {
-  name               = "${var.project_name}-wallet-lambda-role" # Correct role name
+  name               = "${var.project_name}-wallet-lambda-role"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role_policy.json
   tags               = var.tags
 }
@@ -43,7 +43,7 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
 data "aws_iam_policy_document" "dynamodb_wallet_table_policy_doc" {
   # Statement 1: Permissions for wallet_table
   statement {
-    sid       = "WalletTableAccess"
+    sid = "WalletTableAccess"
     actions   = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem"]
     resources = [var.dynamodb_table_arn]
   }
@@ -94,6 +94,9 @@ resource "aws_iam_role_policy_attachment" "sns_payment_publish_attachment" {
 ################################################################################
 
 # --- LAMBDA: CREATE WALLET ---
+# This Lambda is now private, only invoked by the Step Function
+# No archive_file or aws_lambda_function resource is needed here anymore
+# We will create it in the digital_wallet module as it's still a core part of it.
 data "archive_file" "create_wallet_zip" {
   type        = "zip"
   source_dir  = "${path.module}/../../../src/create_wallet"
@@ -112,7 +115,6 @@ resource "aws_lambda_function" "create_wallet_lambda" {
       DYNAMODB_TABLE_NAME           = var.dynamodb_table_name
       TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
       CORS_ORIGIN                   = var.frontend_cors_origin
-      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -135,7 +137,7 @@ resource "aws_lambda_function" "get_wallet_lambda" {
     variables = {
       DYNAMODB_TABLE_NAME = var.dynamodb_table_name
       CORS_ORIGIN         = var.frontend_cors_origin
-      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
+      REDEPLOY_TRIGGER    = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -159,7 +161,6 @@ resource "aws_lambda_function" "credit_wallet_lambda" {
       DYNAMODB_TABLE_NAME           = var.dynamodb_table_name
       TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
       CORS_ORIGIN                   = var.frontend_cors_origin
-      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -183,7 +184,6 @@ resource "aws_lambda_function" "debit_wallet_lambda" {
       DYNAMODB_TABLE_NAME           = var.dynamodb_table_name
       TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
       CORS_ORIGIN                   = var.frontend_cors_origin
-      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -206,7 +206,7 @@ resource "aws_lambda_function" "get_wallet_transactions_lambda" {
     variables = {
       TRANSACTIONS_LOG_TABLE_NAME = var.transactions_log_table_name
       CORS_ORIGIN                   = var.frontend_cors_origin
-      REDEPLOY_TRIGGER = sha1(var.frontend_cors_origin)
+      REDEPLOY_TRIGGER    = sha1(var.frontend_cors_origin)
     }
   }
 }
@@ -271,6 +271,8 @@ resource "aws_api_gateway_resource" "wallet_resource" {
   path_part   = "wallet"
 }
 
+# Note: The POST /wallet (Create) endpoint has been removed.
+# It is now only invoked by the Step Function.
 
 # --- API: /wallet/{wallet_id} ---
 resource "aws_api_gateway_resource" "wallet_id_resource" {
@@ -284,7 +286,8 @@ resource "aws_api_gateway_method" "get_wallet_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.wallet_id_resource.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
 resource "aws_api_gateway_integration" "get_lambda_integration" {
   rest_api_id             = var.api_gateway_id
@@ -294,7 +297,8 @@ resource "aws_api_gateway_integration" "get_lambda_integration" {
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.get_wallet_lambda.invoke_arn
 }
-# (OPTIONS for GET /wallet/{id})
+
+# --- NEW: (OPTIONS for GET /wallet/{id}) ---
 resource "aws_api_gateway_method" "get_wallet_options_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.wallet_id_resource.id
@@ -325,7 +329,7 @@ resource "aws_api_gateway_integration_response" "get_wallet_options_integration_
   response_templates = { "application/json" = "" }
   depends_on = [aws_api_gateway_integration.get_wallet_options_integration]
 }
-
+# --- END NEW BLOCK ---
 
 # --- API: /wallet/{wallet_id}/credit ---
 resource "aws_api_gateway_resource" "credit_resource" {
@@ -339,7 +343,8 @@ resource "aws_api_gateway_method" "credit_wallet_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.credit_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
 resource "aws_api_gateway_integration" "credit_lambda_integration" {
   rest_api_id             = var.api_gateway_id
@@ -395,7 +400,8 @@ resource "aws_api_gateway_method" "debit_wallet_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.debit_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
 resource "aws_api_gateway_integration" "debit_lambda_integration" {
   rest_api_id             = var.api_gateway_id
@@ -451,7 +457,8 @@ resource "aws_api_gateway_method" "get_transactions_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.transactions_resource.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = var.api_gateway_authorizer_id
 }
 resource "aws_api_gateway_integration" "get_transactions_integration" {
   rest_api_id             = var.api_gateway_id
@@ -462,7 +469,7 @@ resource "aws_api_gateway_integration" "get_transactions_integration" {
   uri                     = aws_lambda_function.get_wallet_transactions_lambda.invoke_arn
 }
 
-# --- API: OPTIONS /wallet/{wallet_id}/transactions (CORS) ---
+# --- NEW: (OPTIONS for GET /wallet/{id}/transactions) ---
 resource "aws_api_gateway_method" "get_transactions_options_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.transactions_resource.id
@@ -493,11 +500,14 @@ resource "aws_api_gateway_integration_response" "get_transactions_options_integr
   response_templates = { "application/json" = "" }
   depends_on = [aws_api_gateway_integration.get_transactions_options_integration]
 }
+# --- END NEW BLOCK ---
 
 
 ################################################################################
 # --- LAMBDA PERMISSIONS (API Gateway) ---
 ################################################################################
+
+# (api_gateway_create_permission was removed)
 
 resource "aws_lambda_permission" "api_gateway_get_permission" {
   statement_id  = "AllowAPIGatewayToInvokeGet"

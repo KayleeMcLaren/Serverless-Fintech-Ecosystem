@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react'; // 1. Import useRef
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import GoalTransactionHistory from './GoalTransactionHistory';
 import Spinner from './Spinner';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
-import ConfirmModal from './ConfirmModal'; // Import the modal
-import { BanknotesIcon, CheckCircleIcon } from '@heroicons/react/24/outline'; // Use BanknotesIcon
+import ConfirmModal from './ConfirmModal';
+import { BanknotesIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import WalletPrompt from './WalletPrompt';
 
 function SavingsGoals() {
-  const { wallet, apiUrl, refreshWalletAndHistory } = useWallet();
+  const { wallet, apiUrl, refreshWalletAndHistory, authorizedFetch } = useWallet();
   const walletId = wallet ? wallet.wallet_id : null;
   
   const [goals, setGoals] = useState([]);
@@ -17,34 +17,27 @@ function SavingsGoals() {
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalTarget, setNewGoalTarget] = useState('');
   const [addAmount, setAddAmount] = useState({});
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // State for Delete Modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [goalToDelete, setGoalToDelete] = useState(null);
 
-  // --- NEW: State for Redeem Modal ---
+  // State for Redeem Modal
   const [isRedeemModalOpen, setIsRedeemModalOpen] = useState(false);
   const [goalToRedeem, setGoalToRedeem] = useState(null);
 
-  // --- Create a ref for the input ---
   const newGoalNameInputRef = useRef(null);
 
-  // --- Fetch goals ---
-  useEffect(() => {
-    if (walletId) {
-      fetchGoals();
-    } else {
-      setGoals([]);
+  // --- 1. Correct fetchGoals (wrapped in useCallback) ---
+  const fetchGoals = useCallback(async () => {
+    if (!walletId || !authorizedFetch) {
+      setGoals([]); // Clear goals if no wallet or auth
+      setLoading(false);
+      return;
     }
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletId]);
-
-  const fetchGoals = async () => {
-    if (!walletId) return;
     setLoading(true);
     try {
-      const response = await fetch(`${apiUrl}/savings-goal/by-wallet/${encodeURIComponent(walletId)}`);
+      const response = await authorizedFetch(`${apiUrl}/savings-goal/by-wallet/${encodeURIComponent(walletId)}`);
       if (!response.ok) {
          let errorMsg = `HTTP error! Status: ${response.status}`;
          try { const errBody = await response.json(); errorMsg = errBody.message || errorMsg; } catch(e){}
@@ -58,9 +51,16 @@ function SavingsGoals() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [walletId, apiUrl, authorizedFetch]);
 
-  // --- Create Goal ---
+  // --- 2. Correct useEffect ---
+  // This is the ONLY useEffect that should call fetchGoals
+  useEffect(() => {
+    fetchGoals();
+  }, [fetchGoals]);
+  // ---
+
+  // --- (handleCreateGoal - no changes) ---
   const handleCreateGoal = async (e) => {
     e.preventDefault();
     if (!walletId || !newGoalName || !newGoalTarget || parseFloat(newGoalTarget) <= 0) {
@@ -70,7 +70,7 @@ function SavingsGoals() {
     setLoading(true);
 
     await toast.promise(
-      fetch(`${apiUrl}/savings-goal`, {
+      authorizedFetch(`${apiUrl}/savings-goal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -100,16 +100,18 @@ function SavingsGoals() {
     setLoading(false);
   };
 
-  // Helper to update amount state
+  // --- (handleAmountChange - no changes) ---
   const handleAmountChange = (goalId, value) => {
     setAddAmount(prev => ({ ...prev, [goalId]: value }));
   };
 
-  // --- Delete Goal Modal Functions ---
+  // --- (promptDeleteGoal - no changes) ---
   const promptDeleteGoal = (goalId) => {
     setGoalToDelete(goalId);
     setIsDeleteModalOpen(true);
   };
+
+  // --- (executeDeleteGoal - no changes) ---
   const executeDeleteGoal = async () => {
     if (!goalToDelete) return;
     const goalId = goalToDelete;
@@ -117,7 +119,9 @@ function SavingsGoals() {
     setIsDeleteModalOpen(false);
 
     await toast.promise(
-        fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}`, { method: 'DELETE' })
+        authorizedFetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalToDelete)}`, {
+            method: 'DELETE',
+        })
         .then(async(response) => {
             const responseBody = await response.json();
             if (!response.ok) throw new Error(responseBody?.message || `HTTP error!`);
@@ -136,10 +140,10 @@ function SavingsGoals() {
         }
     );
     setActionLoading(prev => ({ ...prev, [goalId]: false }));
-    setGoalToDelete(null); // Clear the ID
+    setGoalToDelete(null);
   };
 
-  // --- Add Funds to Goal ---
+  // --- (handleAddToGoal - cleaned up console.log) ---
   const handleAddToGoal = async (goalId) => {
     const amountToAddStr = String(addAmount[goalId] || '').trim();
     if (!amountToAddStr || parseFloat(amountToAddStr) <= 0) {
@@ -151,7 +155,7 @@ function SavingsGoals() {
     setActionLoading(prev => ({ ...prev, [goalId]: true }));
 
     await toast.promise(
-        fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}/add`, {
+        authorizedFetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}/add`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -172,7 +176,6 @@ function SavingsGoals() {
             if (refreshWalletAndHistory) {
                 refreshWalletAndHistory();
             }
-            console.log(`Successfully added funds to goal ${goalId}, triggered parent refresh.`);
         }),
         {
             loading: 'Adding funds...',
@@ -184,7 +187,7 @@ function SavingsGoals() {
   };
 
   
-// --- NEW: Redeem Goal Modal Functions ---
+  // --- (Redeem Goal functions - no changes) ---
   const promptRedeemGoal = (goal) => {
     setGoalToRedeem(goal);
     setIsRedeemModalOpen(true);
@@ -197,7 +200,7 @@ function SavingsGoals() {
     setIsRedeemModalOpen(false);
 
     await toast.promise(
-        fetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalId)}/redeem`, {
+        authorizedFetch(`${apiUrl}/savings-goal/${encodeURIComponent(goalToRedeem.goal_id)}/redeem`, {
             method: 'POST',
         })
         .then(async(response) => {
@@ -208,8 +211,8 @@ function SavingsGoals() {
             return responseBody;
         })
         .then(() => {
-            fetchGoals(); // Refetch goals (it will be gone from the list)
-            if (refreshWalletAndHistory) { // Refresh wallet balance
+            fetchGoals();
+            if (refreshWalletAndHistory) {
                 refreshWalletAndHistory();
             }
         }),
@@ -222,7 +225,6 @@ function SavingsGoals() {
     setActionLoading(prev => ({ ...prev, [goalId]: false }));
     setGoalToRedeem(null);
   };
-  // --- END NEW FUNCTIONS ---
 
 
   // --- Render Logic ---
@@ -241,7 +243,6 @@ function SavingsGoals() {
           <BanknotesIcon className="h-12 w-12 mx-auto text-neutral-400" />
           <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Savings Goals</h3>
           <p className="mt-1 text-sm text-neutral-500">Get started by adding a new goal below.</p>
-          {/* Removed button */}
         </div>
       )}
 
@@ -252,11 +253,11 @@ function SavingsGoals() {
             const target = parseFloat(goal.target_amount);
             const percentage = target > 0 ? Math.min((current / target) * 100, 100) : 0;
             const isLoadingThisGoalAction = actionLoading[goal.goal_id];
-            const isComplete = percentage >= 100; // Check if goal is complete
+            const isComplete = percentage >= 100;
 
             return (
               <li key={goal.goal_id} className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
-                {/* Goal Name, Amounts, Delete Button */}
+                
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <span className="font-medium text-neutral-800">{goal.goal_name}</span>
@@ -265,21 +266,18 @@ function SavingsGoals() {
                       <span className="ml-2 text-xs font-semibold text-primary-blue">({percentage.toFixed(0)}%)</span>
                     </span>
                   </div>
-
-                  {/* Delete Button */}
                    <button
-                     onClick={() => promptDeleteGoal(goal.goal_id)} // Use prompt function
+                     onClick={() => promptDeleteGoal(goal.goal_id)}
                      disabled={loading || isLoadingThisGoalAction}
                      className="px-2 py-1 bg-accent-red text-white text-xs rounded hover:bg-accent-red-dark disabled:bg-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-500 flex-shrink-0"
                    >
-                    {isLoadingThisGoalAction ? '...' : 'Delete'}
+                     {/* --- 3. FIX: Check object key --- */}
+                     {actionLoading[goal.goal_id] ? '...' : 'Delete'}
                    </button>
                 </div>
                
-               {/* Progress Bar */}
                 <div className="w-full bg-neutral-200 rounded-full h-2.5 dark:bg-neutral-700 mt-1 mb-3">
                   <div
-                    // --- Change color if complete ---
                     className={`h-2.5 rounded-full transition-all duration-300 ease-out ${
                       isComplete ? 'bg-accent-green' : 'bg-primary-blue'
                     }`}
@@ -287,7 +285,6 @@ function SavingsGoals() {
                   ></div>
                 </div>
 
-                {/* Show "Add Funds" OR "Redeem" --- */}
                 {!isComplete ? (
                   <div className="flex flex-wrap gap-2 items-center mt-2">
                       <input
@@ -320,9 +317,8 @@ function SavingsGoals() {
                     </button>
                   </div>
                 )}
-
-                 {/* --- Goal Transaction History --- */}
-                 <GoalTransactionHistory goalId={goal.goal_id} apiUrl={apiUrl} />
+                 
+                 <GoalTransactionHistory goalId={goal.goal_id} />
               </li>
             );
           })}
@@ -334,7 +330,7 @@ function SavingsGoals() {
          <h4 className="text-md font-semibold text-neutral-700 mb-3">Add New Goal</h4>
         <div className="flex flex-wrap gap-3 mb-3 items-stretch">
           <input
-            ref={newGoalNameInputRef} // Attach ref
+            ref={newGoalNameInputRef}
             type="text"
             value={newGoalName}
             onChange={(e) => setNewGoalName(e.target.value)}
@@ -378,18 +374,17 @@ function SavingsGoals() {
         Are you sure you want to delete this savings goal? Any funds will be returned to your wallet.
       </ConfirmModal>
 
-      {/* --- NEW: Redeem Modal --- */}
+      {/* --- Redeem Modal --- */}
       <ConfirmModal
         isOpen={isRedeemModalOpen}
         title="Confirm Redemption"
         onClose={() => setIsRedeemModalOpen(false)}
         onConfirm={executeRedeemGoal}
         confirmText="Redeem"
-        confirmVariant="primary" // Use primary color
+        confirmVariant="primary"
       >
         Are you sure you want to redeem this goal? The total amount of <b>{formatCurrency(goalToRedeem?.current_amount)}</b> will be transferred to your main wallet and this goal will be deleted.
       </ConfirmModal>
-      
     </div>
   );
 }

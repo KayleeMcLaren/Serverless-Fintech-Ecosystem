@@ -14,12 +14,22 @@ output "api_gateway_config_hash" {
     aws_api_gateway_resource.loan_id_resource,
     aws_api_gateway_method.get_loan_method,
     aws_api_gateway_integration.get_loan_integration,
+    # --- ADDED: OPTIONS for GET /loan/{id} ---
+    aws_api_gateway_method.get_loan_options_method,
+    aws_api_gateway_method_response.get_loan_options_200,
+    aws_api_gateway_integration.get_loan_options_integration,
+    aws_api_gateway_integration_response.get_loan_options_integration_response,
 
     # GET /loan/by-wallet/{wallet_id}
     aws_api_gateway_resource.loan_by_wallet_resource,
     aws_api_gateway_resource.loan_by_wallet_id_resource,
     aws_api_gateway_method.get_loans_by_wallet_method,
     aws_api_gateway_integration.get_loans_by_wallet_integration,
+    # --- ADDED: OPTIONS for GET /loan/by-wallet/{id} ---
+    aws_api_gateway_method.get_loans_by_wallet_options_method,
+    aws_api_gateway_method_response.get_loans_by_wallet_options_200,
+    aws_api_gateway_integration.get_loans_by_wallet_options_integration,
+    aws_api_gateway_integration_response.get_loans_by_wallet_options_integration_response,
 
     # POST /loan/{loan_id}/approve
     aws_api_gateway_resource.approve_loan_resource,
@@ -43,8 +53,6 @@ output "api_gateway_config_hash" {
     aws_api_gateway_resource.repay_loan_resource,
     aws_api_gateway_method.repay_loan_method,
     aws_api_gateway_integration.repay_loan_integration,
-    
-    # OPTIONS for /loan/{loan_id}/repay
     aws_api_gateway_method.repay_loan_options_method,
     aws_api_gateway_method_response.repay_loan_options_200,
     aws_api_gateway_integration.repay_loan_options_integration,
@@ -52,6 +60,7 @@ output "api_gateway_config_hash" {
   ]))
 }
 
+# (Keep the loans_table_arn output)
 output "loans_table_arn" {
   description = "The ARN of the micro-loans DynamoDB table"
   value       = var.dynamodb_table_arn

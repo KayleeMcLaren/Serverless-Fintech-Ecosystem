@@ -177,6 +177,10 @@ resource "aws_api_gateway_deployment" "api_deployment" {
   lifecycle {
     create_before_destroy = true
   }
+
+  depends_on = [
+    aws_api_gateway_authorizer.cognito_auth
+  ]
 }
 
 resource "aws_api_gateway_stage" "api_stage" {
@@ -206,6 +210,82 @@ resource "aws_sns_topic" "loan_events" {
   tags = local.common_tags
 }
 
+# --- AWS Cognito User Pool ---
+resource "aws_cognito_user_pool" "user_pool" {
+  name = "${local.project_name}-user-pool"
+  
+  # Use email as the username
+  username_attributes = ["email"]
+  
+  # Configure email as a required attribute
+  schema {
+    name                     = "email"
+    attribute_data_type      = "String"
+    mutable                  = true
+    required                 = true
+    string_attribute_constraints {
+      min_length = 1
+      max_length = 2048
+    }
+  }
+
+  # Set a simple password policy for the demo
+  password_policy {
+    minimum_length    = 8
+    require_lowercase = true
+    require_numbers   = true
+    require_symbols   = false
+    require_uppercase = true
+  }
+
+  # Allow users to sign themselves up
+  admin_create_user_config {
+    allow_admin_create_user_only = false
+  }
+
+  # We will auto-verify emails for this demo to skip email loops
+  auto_verified_attributes = ["email"]
+
+  lambda_config {
+    pre_sign_up = aws_lambda_function.pre_signup_trigger_lambda.arn
+  }
+
+  tags = local.common_tags
+}
+
+# --- Cognito User Pool Client ---
+# This is what the frontend app uses to interface with Cognito
+resource "aws_cognito_user_pool_client" "user_pool_client" {
+  name = "${local.project_name}-app-client"
+  user_pool_id = aws_cognito_user_pool.user_pool.id
+
+  # CRITICAL: This must be false for public web/mobile clients
+  generate_secret = false
+
+  # Allow the standard username/password flow
+  explicit_auth_flows = [
+    "ALLOW_USER_SRP_AUTH",
+    "ALLOW_USER_PASSWORD_AUTH",
+    "ALLOW_REFRESH_TOKEN_AUTH"
+  ]
+
+  # Allow Cognito to remember devices
+  enable_token_revocation = true
+}
+
+# --- API Gateway Authorizer ---
+# This connects our API to our new Cognito User Pool
+resource "aws_api_gateway_authorizer" "cognito_auth" {
+  name                   = "${local.project_name}-cognito-authorizer"
+  rest_api_id            = aws_api_gateway_rest_api.api.id
+  type                   = "COGNITO_USER_POOLS"
+  identity_source        = "method.request.header.Authorization" # Looks for the JWT token here
+  provider_arns = [aws_cognito_user_pool.user_pool.arn]
+  depends_on = [
+    aws_cognito_user_pool.user_pool
+  ]
+}
+
 # The S3 bucket for storing KYC documents (e.g., ID photos)
 resource "aws_s3_bucket" "kyc_documents_bucket" {
   bucket = "${local.project_name}-kyc-documents-${random_id.bucket_suffix.hex}"
@@ -220,6 +300,58 @@ resource "aws_s3_bucket_public_access_block" "kyc_bucket_pab" {
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
+}
+
+# --- Lambda Function for Cognito Pre-Sign-Up Trigger ---
+
+# (We need a simple IAM role for this Lambda)
+data "aws_iam_policy_document" "cognito_trigger_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "cognito_trigger_role" {
+  name               = "${local.project_name}-cognito-trigger-role"
+  assume_role_policy = data.aws_iam_policy_document.cognito_trigger_assume_role.json
+  tags               = local.common_tags
+}
+
+# (It also needs basic CloudWatch logging permissions)
+resource "aws_iam_role_policy_attachment" "cognito_trigger_basic_execution" {
+  role       = aws_iam_role.cognito_trigger_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# (Zip up the new code)
+data "archive_file" "pre_signup_trigger_zip" {
+  type        = "zip"
+  source_dir  = "../src/pre_signup_trigger"
+  output_path = "pre_signup_trigger.zip"
+}
+
+# (Create the Lambda function)
+resource "aws_lambda_function" "pre_signup_trigger_lambda" {
+  function_name    = "${local.project_name}-pre-signup-trigger"
+  role             = aws_iam_role.cognito_trigger_role.arn
+  filename         = data.archive_file.pre_signup_trigger_zip.output_path
+  source_code_hash = data.archive_file.pre_signup_trigger_zip.output_base64sha256
+  handler          = "handler.auto_confirm_user"
+  runtime          = "python3.12"
+  tags             = local.common_tags
+}
+
+# (Allow Cognito to invoke this Lambda)
+resource "aws_lambda_permission" "cognito_allow_invoke_pre_signup" {
+  statement_id  = "AllowCognitoToInvokePreSignup"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.pre_signup_trigger_lambda.function_name
+  principal     = "cognito-idp.amazonaws.com"
+  source_arn    = aws_cognito_user_pool.user_pool.arn
 }
 
 # --- SERVICE MODULES ---
@@ -243,6 +375,7 @@ module "digital_wallet" {
   transactions_log_table_name  = aws_dynamodb_table.transactions_log_table.name
   transactions_log_table_arn   = aws_dynamodb_table.transactions_log_table.arn
   frontend_cors_origin         = var.frontend_cors_origin
+  api_gateway_authorizer_id    = aws_api_gateway_authorizer.cognito_auth.id
 }
 # --- END CORRECTION ---
 
@@ -264,6 +397,7 @@ module "micro_loan" {
   transactions_log_table_name  = aws_dynamodb_table.transactions_log_table.name
   transactions_log_table_arn   = aws_dynamodb_table.transactions_log_table.arn
   frontend_cors_origin         = var.frontend_cors_origin
+  api_gateway_authorizer_id    = aws_api_gateway_authorizer.cognito_auth.id
 }
 
 module "payment_processor" {
@@ -281,6 +415,7 @@ module "payment_processor" {
   dynamodb_table_arn           = aws_dynamodb_table.transactions_table.arn
   sns_topic_arn                = aws_sns_topic.payment_events.arn
   frontend_cors_origin         = var.frontend_cors_origin
+  api_gateway_authorizer_id    = aws_api_gateway_authorizer.cognito_auth.id
 }
 
 module "savings_goal" {
@@ -301,6 +436,7 @@ module "savings_goal" {
   transactions_log_table_name  = aws_dynamodb_table.transactions_log_table.name
   transactions_log_table_arn   = aws_dynamodb_table.transactions_log_table.arn
   frontend_cors_origin         = var.frontend_cors_origin
+  api_gateway_authorizer_id    = aws_api_gateway_authorizer.cognito_auth.id
 }
 
 module "debt_optimiser" {
@@ -316,6 +452,7 @@ module "debt_optimiser" {
   api_gateway_execution_arn    = aws_api_gateway_rest_api.api.execution_arn
   loans_table_arn              = module.micro_loan.loans_table_arn
   frontend_cors_origin         = var.frontend_cors_origin
+  api_gateway_authorizer_id    = aws_api_gateway_authorizer.cognito_auth.id
 }
 
 module "onboarding_orchestrator" {
@@ -338,6 +475,7 @@ module "onboarding_orchestrator" {
   create_wallet_lambda_arn   = module.digital_wallet.create_wallet_lambda_arn 
   
   frontend_cors_origin         = var.frontend_cors_origin
+  api_gateway_authorizer_id    = aws_api_gateway_authorizer.cognito_auth.id
 }
 
 # --- FRONTEND DEPLOYMENT (S3 & CloudFront) ---

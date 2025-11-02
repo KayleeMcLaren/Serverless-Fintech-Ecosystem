@@ -426,7 +426,8 @@ resource "aws_api_gateway_method" "start_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.start_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"      # <-- LINE 1
+  authorizer_id = var.api_gateway_authorizer_id # <-- LINE 2
 }
 resource "aws_api_gateway_integration" "start_integration" {
   rest_api_id             = var.api_gateway_id
@@ -484,7 +485,8 @@ resource "aws_api_gateway_method" "status_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.status_resource.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"      # <-- LINE 1
+  authorizer_id = var.api_gateway_authorizer_id # <-- LINE 2
 }
 resource "aws_api_gateway_integration" "status_integration" {
   rest_api_id             = var.api_gateway_id
@@ -536,7 +538,8 @@ resource "aws_api_gateway_method" "review_method" {
   rest_api_id   = var.api_gateway_id
   resource_id   = aws_api_gateway_resource.review_resource.id
   http_method   = "POST"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"      # <-- LINE 1
+  authorizer_id = var.api_gateway_authorizer_id # <-- LINE 2
 }
 resource "aws_api_gateway_integration" "review_integration" {
   rest_api_id             = var.api_gateway_id

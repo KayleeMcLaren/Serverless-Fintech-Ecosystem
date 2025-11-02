@@ -7,7 +7,7 @@ import WalletPrompt from './WalletPrompt';
 
 function Dashboard() {
   // Get wallet and API URL from context
-  const { wallet, apiUrl } = useWallet();
+  const { wallet, apiUrl, authorizedFetch } = useWallet();
   const walletId = wallet ? wallet.wallet_id : null;
 
   // Local state for our calculated data
@@ -16,15 +16,16 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (walletId) {
+    // Check for walletId AND authorizedFetch
+    if (walletId && authorizedFetch) {
       // Fetch all data when walletId is available
       const fetchData = async () => {
         setLoading(true);
         try {
           // Fetch savings goals and approved loans in parallel
           const [savingsResponse, loansResponse] = await Promise.all([
-            fetch(`${apiUrl}/savings-goal/by-wallet/${encodeURIComponent(walletId)}`),
-            fetch(`${apiUrl}/loan/by-wallet/${encodeURIComponent(walletId)}`)
+            authorizedFetch(`${apiUrl}/savings-goal/by-wallet/${encodeURIComponent(walletId)}`),
+            authorizedFetch(`${apiUrl}/loan/by-wallet/${encodeURIComponent(walletId)}`)
           ]);
 
           if (!savingsResponse.ok) throw new Error('Failed to fetch savings goals');
@@ -61,9 +62,15 @@ function Dashboard() {
       setTotalSavings(0);
       setTotalDebt(0);
     }
-  }, [walletId, apiUrl]); // Re-run if wallet or API URL changes
+    // --- ADD authorizedFetch to the dependency array ---
+  }, [walletId, apiUrl, authorizedFetch]); 
 
-  if (loading) {
+  if (loading && !walletId) {
+    // Don't show loading spinner if we're just waiting for a wallet
+    return <WalletPrompt />;
+  }
+
+  if (loading && walletId) {
     return (
       <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mt-8 shadow-sm">
         <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Dashboard</h2>
