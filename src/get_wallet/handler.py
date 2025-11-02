@@ -5,17 +5,14 @@ from decimal import Decimal
 from urllib.parse import unquote
 from botocore.exceptions import ClientError
 
+import logging
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
 # --- Table Name & CORS Origin ---
 TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME')
 ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*") # Get CORS origin
-
-# --- DynamoDB Resource ---
-dynamodb = boto3.resource('dynamodb')
-if not TABLE_NAME:
-    print("ERROR: DYNAMODB_TABLE_NAME environment variable not set.")
-    table = None
-else:
-    table = dynamodb.Table(TABLE_NAME)
 
 # --- CORS Headers ---
 OPTIONS_CORS_HEADERS = {
@@ -40,10 +37,14 @@ class DecimalEncoder(json.JSONEncoder):
 def get_wallet(event, context):
     """Retrieves a wallet by its ID."""
 
+    # Initialize DynamoDB resource inside the function
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(TABLE_NAME) if TABLE_NAME else None
+
     # --- 1. ADD CORS Preflight Check ---
     http_method = event.get('httpMethod', '').upper()
     if http_method == 'OPTIONS':
-        print("Handling OPTIONS request for get_wallet")
+        logger.info("Handling OPTIONS preflight request for get_wallet")
         return {
             "statusCode": 200,
             "headers": OPTIONS_CORS_HEADERS,
@@ -52,18 +53,36 @@ def get_wallet(event, context):
     # --- End Preflight Check ---
 
     if not table:
-        print("ERROR: Table resource is not initialized.")
+        log_message = {
+            "status": "error",
+            "action": "get_wallet",
+            "message": "FATAL: DYNAMODB_TABLE_NAME environment variable not set."
+        }
+        logger.error(json.dumps(log_message))
         return { "statusCode": 500, "headers": GET_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error."}) }
 
     if http_method == 'GET':
+        wallet_id = "unknown"
         try:
             wallet_id = unquote(event['pathParameters']['wallet_id']).strip()
-            print(f"Fetching wallet: {wallet_id}")
+            log_message = {
+                "status": "info",
+                "action": "get_wallet",
+                "wallet_id": wallet_id
+            }
+            logger.info(json.dumps(log_message))
 
             response = table.get_item(Key={'wallet_id': wallet_id})
             item = response.get('Item')
 
             if not item:
+                log_message = {
+                    "status": "warn",
+                    "action": "get_wallet",
+                    "wallet_id": wallet_id,
+                    "message": "Wallet not found in database."
+                }
+                logger.warning(json.dumps(log_message))
                 return {
                     "statusCode": 404,
                     "headers": GET_CORS_HEADERS, # --- 2. USE CORS Variable ---
@@ -76,10 +95,23 @@ def get_wallet(event, context):
                 "body": json.dumps(item, cls=DecimalEncoder)
             }
         except ClientError as ce:
-             print(f"DynamoDB Error: {ce}")
+             log_message = {
+                "status": "error",
+                "action": "get_wallet",
+                "wallet_id": wallet_id,
+                "error_code": ce.response['Error']['Code'],
+                "error_message": str(ce)
+             }
+             logger.error(json.dumps(log_message))
              return { "statusCode": 500, "headers": GET_CORS_HEADERS, "body": json.dumps({"message": "Database error.", "error": str(ce)}) }
         except Exception as e:
-            print(f"Error: {e}")
+            log_message = {
+                "status": "error",
+                "action": "get_wallet",
+                "wallet_id": wallet_id,
+                "error_message": str(e)
+             }
+            logger.error(json.dumps(log_message))
             return {
                 "statusCode": 500,
                 "headers": GET_CORS_HEADERS, # --- 2. USE CORS Variable ---

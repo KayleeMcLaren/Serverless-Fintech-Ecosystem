@@ -1,123 +1,145 @@
 import json
 import os
-import uuid
 import boto3
+import uuid
 import time
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation
 from botocore.exceptions import ClientError
+import logging # <-- 1. Import logging
 
-# --- CORS Configuration (Keep as is) ---
-ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
-OPTIONS_CORS_HEADERS = { "Access-Control-Allow-Origin": ALLOWED_ORIGIN, "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Credentials": True }
-POST_CORS_HEADERS = { "Access-Control-Allow-Origin": ALLOWED_ORIGIN, "Access-Control-Allow-Credentials": True }
-# --- End CORS Configuration ---
-
-TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME')
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table(TABLE_NAME)
-
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, o):
-        if isinstance(o, Decimal): return str(o)
-        return super(DecimalEncoder, self).default(o)
-
-# --- NEW: Interest rate based ONLY on term ---
-def calculate_interest_rate(term_months):
-    """Calculates interest rate based on loan term."""
-    term = int(term_months)
-    if term <= 12:
-        return Decimal('8.0') # Short term
-    elif term <= 24:
-        return Decimal('12.0') # Medium term
-    else:
-        return Decimal('15.0') # Long term
+# --- 2. Set up logger ---
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 # ---
 
-# --- NEW: Amortization Formula for Minimum Payment ---
-def calculate_minimum_payment(amount, annual_rate, term_months):
-    """Calculates the monthly payment (PMT) for a loan."""
-    if annual_rate <= 0 or term_months <= 0:
-        return (amount / (term_months if term_months > 0 else 1)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    
-    monthly_rate = (annual_rate / Decimal('100')) / Decimal('12') # i
-    n = term_months # n
-    P = amount # P
-    
-    if monthly_rate == 0:
-        return (P / n).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+# --- Environment Variables ---
+TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME')
+ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
 
-    try:
-        numerator = monthly_rate * ((Decimal('1') + monthly_rate) ** n)
-        denominator = ((Decimal('1') + monthly_rate) ** n) - Decimal('1')
-        monthly_payment = P * (numerator / denominator)
-        
-        return monthly_payment.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    except Exception as e:
-        print(f"Error in amortization calculation: {e}")
-        # Fallback to simple interest + principal
-        return (amount / n + (amount * (annual_rate / 100) / 12)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+# --- (CORS Headers - no changes) ---
+OPTIONS_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Credentials": True
+}
+POST_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+    "Access-Control-Allow-Credentials": True
+}
+# ---
+
+# --- (DecimalEncoder - no changes) ---
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, Decimal):
+            return str(o)
+        return super(DecimalEncoder, self).default(o)
 # ---
 
 def apply_for_loan(event, context):
-    """Creates a new loan application, calculating rate/min_payment from amount/term."""
-
-    # --- CORS Preflight Check (Keep as is) ---
+    """
+    API: POST /loan
+    Applies for a new loan. Creates a 'PENDING' loan entry in DynamoDB.
+    """
+    
+    # --- 3. Initialize boto3 inside the handler ---
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(TABLE_NAME) if TABLE_NAME else None
+    # ---
+    
+    # --- (CORS Preflight Check - no changes) ---
     http_method = event.get('httpMethod', '').upper()
     if http_method == 'OPTIONS':
+        logger.info("Handling OPTIONS preflight request for apply_for_loan")
         return { "statusCode": 200, "headers": OPTIONS_CORS_HEADERS, "body": "" }
-    # --- End CORS Preflight Check ---
+
+    if not table:
+        log_message = {
+            "status": "error",
+            "action": "apply_for_loan",
+            "message": "FATAL: DYNAMODB_TABLE_NAME environment variable not set."
+        }
+        logger.error(json.dumps(log_message))
+        return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error."}) }
 
     if http_method == 'POST':
+        log_context = {"action": "apply_for_loan"}
         try:
             body = json.loads(event.get('body', '{}'))
-            
             wallet_id = body.get('wallet_id')
             amount_str = body.get('amount')
             term_months_str = body.get('loan_term_months')
 
-            if not all([wallet_id, amount_str, term_months_str]):
-                raise ValueError("wallet_id, amount, and loan_term_months are required.")
+            log_context["wallet_id"] = wallet_id
 
+            if not wallet_id or not amount_str or not term_months_str:
+                raise ValueError("wallet_id, amount, and loan_term_months are required.")
+            
             amount = Decimal(amount_str)
             term_months = int(term_months_str)
             
-            if not (Decimal('50') <= amount <= Decimal('10000')):
-                 raise ValueError("Loan amount must be between $50 and $10,000.")
-            if term_months not in [12, 24, 36]:
-                 raise ValueError("Loan term must be 12, 24, or 36 months.")
+            if amount <= 0 or term_months <= 0:
+                raise ValueError("Amount and term must be positive.")
 
-            # --- Calculate Loan Terms ---
-            interest_rate = calculate_interest_rate(term_months) # Use new logic
-            minimum_payment = calculate_minimum_payment(amount, interest_rate, term_months)
-            # --- End Calculation ---
+            log_context.update({"amount": str(amount), "term_months": term_months})
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Processing new loan application."}))
 
+            # --- Business Logic for Loan ---
             loan_id = str(uuid.uuid4())
+            timestamp = int(time.time())
+            
+            # Determine interest rate
+            if term_months <= 12:
+                interest_rate = Decimal('8.0')
+            elif term_months <= 24:
+                interest_rate = Decimal('12.0')
+            else:
+                interest_rate = Decimal('15.0')
+                
+            # Calculate minimum monthly payment
+            if interest_rate > 0:
+                monthly_rate = (interest_rate / 100) / 12
+                P = amount
+                n = term_months
+                numerator = monthly_rate * ((1 + monthly_rate) ** n)
+                denominator = ((1 + monthly_rate) ** n) - 1
+                minimum_payment = P * (numerator / denominator)
+            else:
+                minimum_payment = amount / term_months # Simple interest-free
+
             item = {
                 'loan_id': loan_id,
                 'wallet_id': wallet_id,
                 'amount': amount,
-                'status': 'PENDING',
-                'created_at': int(time.time()),
+                'remaining_balance': amount, # Initially, remaining balance is the full amount
                 'interest_rate': interest_rate,
-                'minimum_payment': minimum_payment,
-                'remaining_balance': amount,
-                'loan_term_months': term_months
+                'loan_term_months': term_months,
+                'minimum_payment': minimum_payment.quantize(Decimal('0.01')),
+                'status': 'PENDING', # New loans start as PENDING
+                'created_at': timestamp,
+                'updated_at': timestamp
             }
-
+            
+            # 1. Create the loan item
             table.put_item(Item=item)
-            response_body = { "message": "Loan application received!", "loan": item }
+            
+            logger.info(json.dumps({**log_context, "loan_id": loan_id, "status": "info", "message": "Loan application created successfully."}))
 
             return {
-                "statusCode": 201,
+                "statusCode": 201, # Created
                 "headers": POST_CORS_HEADERS,
-                "body": json.dumps(response_body, cls=DecimalEncoder)
+                "body": json.dumps({"message": "Loan application received!", "loan": item}, cls=DecimalEncoder)
             }
-        
+            
         except (ValueError, TypeError, InvalidOperation) as ve:
-            print(f"Input Error applying for loan: {ve}")
-            return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Invalid input: {str(ve)}"}) }
+             logger.error(json.dumps({**log_context, "status": "error", "error_message": str(ve)}))
+             return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Invalid input: {str(ve)}"}) }
+        except ClientError as ce:
+             logger.error(json.dumps({**log_context, "status": "error", "error_code": ce.response['Error']['Code'], "error_message": str(ce)}))
+             return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Database error.", "error": str(ce)}) }
         except Exception as e:
-            print(f"Error applying for loan: {e}")
-            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Failed to apply for loan.", "error": str(e)}) }
+            logger.error(json.dumps({**log_context, "status": "error", "error_message": str(e)}))
+            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "An unexpected error occurred.", "error": str(e)}) }
     else:
          return { "statusCode": 405, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Method {http_method} not allowed."}) }

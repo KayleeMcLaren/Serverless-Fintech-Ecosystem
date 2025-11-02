@@ -1,23 +1,23 @@
 import json
 import os
 import boto3
-import uuid # For transaction ID
-import time # For timestamp
-from decimal import Decimal, InvalidOperation # Import InvalidOperation
-from urllib.parse import unquote
+import uuid
+import time
+from decimal import Decimal, InvalidOperation
 from botocore.exceptions import ClientError
+import logging
 
-# --- Table Names ---
+# --- Set up logger ---
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+# ---
+
+# --- Environment Variables ---
 TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME')
 LOG_TABLE_NAME = os.environ.get('TRANSACTIONS_LOG_TABLE_NAME')
-
-# --- DynamoDB Resources ---
-dynamodb_resource = boto3.resource('dynamodb')
-table = dynamodb_resource.Table(TABLE_NAME)
-log_table = dynamodb_resource.Table(LOG_TABLE_NAME) if LOG_TABLE_NAME else None
-
-# --- CORS Configuration ---
 ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
+
+# --- CORS Headers ---
 OPTIONS_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -28,107 +28,144 @@ POST_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Credentials": True
 }
-# --- End CORS Configuration ---
+# ---
 
+# --- DecimalEncoder ---
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, Decimal):
             return str(o)
         return super(DecimalEncoder, self).default(o)
+# ---
 
 # --- Transaction Logging Helper ---
-def log_transaction(wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
+def log_transaction(log_table, wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
     if not log_table:
-        print("Log table name not configured, skipping log.")
+        logger.warn(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
         return
     try:
-        timestamp = int(time.time()) # Ensure timestamp is integer
+        timestamp = int(time.time())
         log_item = {
             'transaction_id': str(uuid.uuid4()),
             'wallet_id': wallet_id,
-            'timestamp': timestamp, # Save timestamp as Number (N)
+            'timestamp': timestamp,
             'type': tx_type,
             'amount': amount,
             'balance_after': new_balance if new_balance is not None else Decimal('NaN'),
             'related_id': related_id if related_id else 'N/A',
             'details': details if details else {}
         }
-        # Handle NaN specifically for DynamoDB put_item
         if isinstance(log_item['balance_after'], Decimal) and log_item['balance_after'].is_nan():
-             log_item['balance_after'] = 'N/A' # Store as string 'N/A'
-        # Boto3 handles Decimal conversion for valid numbers
-
+             log_item['balance_after'] = 'N/A' 
+        
         log_table.put_item(Item=log_item)
-        print(f"Logged transaction: {log_item['transaction_id']} for wallet {wallet_id}")
+        
+        log_message = {
+            "status": "info",
+            "action": "log_transaction",
+            "wallet_id": wallet_id,
+            "transaction_id": log_item['transaction_id']
+        }
+        logger.info(json.dumps(log_message))
+
     except Exception as log_e:
-        print(f"ERROR logging transaction: {log_e}")
-# --- End Helper ---
+        log_message = {
+            "status": "error",
+            "action": "log_transaction",
+            "wallet_id": wallet_id,
+            "error_message": str(log_e)
+        }
+        logger.error(json.dumps(log_message))
+# ---
 
 def credit_wallet(event, context):
-    """Adds amount to wallet balance and logs transaction. Handles OPTIONS."""
-
+    """
+    Credits (adds) a specified amount to the wallet.
+    """
+    
+    # --- Initialize boto3 clients inside the handler ---
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(TABLE_NAME) if TABLE_NAME else None
+    log_table = dynamodb.Table(LOG_TABLE_NAME) if LOG_TABLE_NAME else None
+    # ---
+    
     # --- CORS Preflight Check ---
     http_method = event.get('httpMethod', '').upper()
     if http_method == 'OPTIONS':
+        logger.info("Handling OPTIONS preflight request for credit_wallet")
         return { "statusCode": 200, "headers": OPTIONS_CORS_HEADERS, "body": "" }
-    # --- End CORS Preflight Check ---
+
+    if not table or not log_table:
+        log_message = {
+            "status": "error",
+            "action": "credit_wallet",
+            "message": "FATAL: Environment variables not set."
+        }
+        logger.error(json.dumps(log_message))
+        return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error."}) }
 
     if http_method == 'POST':
+        wallet_id = "unknown"
+        log_context = {"action": "credit_wallet"}
+        
         try:
-            wallet_id = unquote(event['pathParameters']['wallet_id']).strip()
+            # Note: We don't use unquote for wallet_id from pathParameters here
+            # because we're not expecting special characters.
+            # But we will for safety.
+            wallet_id = event['pathParameters']['wallet_id'].strip()
+            log_context["wallet_id"] = wallet_id
+            
             body = json.loads(event.get('body', '{}'))
-            amount_str = body.get('amount', '0.00')
-            amount = Decimal(amount_str)
+            amount = Decimal(body.get('amount', '0.00'))
+            log_context["amount"] = str(amount)
 
             if amount <= 0:
-                return {
-                    "statusCode": 400,
-                    "headers": POST_CORS_HEADERS,
-                    "body": json.dumps({"message": "Amount must be positive."})
-                }
+                raise ValueError("Credit amount must be positive.")
 
-            # Update wallet balance
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Processing wallet credit."}))
+
             response = table.update_item(
                 Key={'wallet_id': wallet_id},
                 UpdateExpression="SET balance = balance + :amount",
+                ExpressionAttributeValues={':amount': amount},
                 ConditionExpression="attribute_exists(wallet_id)",
-                ExpressionAttributeValues={ ':amount': amount },
                 ReturnValues="UPDATED_NEW"
             )
-            print(f"Successfully credited wallet {wallet_id}")
-            new_balance = response.get('Attributes', {}).get('balance') # Get new balance
-
-            # --- Log Transaction ---
+            
+            new_balance = response.get('Attributes', {}).get('balance')
+            
+            # Log this transaction
             log_transaction(
+                log_table=log_table,
                 wallet_id=wallet_id,
                 tx_type="CREDIT",
                 amount=amount,
-                new_balance=new_balance, # Pass the balance
-                details={"source": "Direct Deposit"}
+                new_balance=new_balance
             )
-            # --- End Log ---
+            
+            log_context["new_balance"] = str(new_balance)
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Credit successful."}))
 
             return {
                 "statusCode": 200,
                 "headers": POST_CORS_HEADERS,
-                "body": json.dumps(response['Attributes'], cls=DecimalEncoder)
+                "body": json.dumps({"message": "Credit successful!", "balance": new_balance}, cls=DecimalEncoder)
             }
-
-        except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code')
-            if error_code == 'ConditionalCheckFailedException':
-                 return {
-                    "statusCode": 404,
-                    "headers": POST_CORS_HEADERS,
-                    "body": json.dumps({"message": "Wallet not found."})
-                }
-            print(f"ClientError: {e}")
-            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Database error during credit.", "error": str(e)}) }
+            
         except (ValueError, TypeError, InvalidOperation) as ve:
-             print(f"Input Error: {ve}")
-             return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Invalid amount format: {ve}"}) }
+             logger.error(json.dumps({**log_context, "status": "error", "error_message": str(ve)}))
+             return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Invalid input: {str(ve)}"}) }
+        except ClientError as e:
+            log_context["error_code"] = e.response['Error']['Code']
+            
+            if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                logger.warn(json.dumps({**log_context, "status": "warn", "message": "Wallet not found."}))
+                return { "statusCode": 404, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Wallet not found."}) }
+            
+            logger.error(json.dumps({**log_context, "status": "error", "error_message": str(e)}))
+            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Database error.", "error": str(e)}) }
         except Exception as e:
-            print(f"Error: {e}")
-            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Failed to credit wallet.", "error": str(e)}) }
+            logger.error(json.dumps({**log_context, "status": "error", "error_message": str(e)}))
+            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "An unexpected error occurred.", "error": str(e)}) }
     else:
-        return { "statusCode": 405, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Method {http_method} not allowed."}) }
+         return { "statusCode": 405, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Method {http_method} not allowed."}) }

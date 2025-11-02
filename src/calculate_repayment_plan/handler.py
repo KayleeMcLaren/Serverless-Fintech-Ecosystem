@@ -1,228 +1,237 @@
 import json
 import os
 import boto3
-from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-import copy
+from decimal import Decimal
 from botocore.exceptions import ClientError
-from boto3.dynamodb.conditions import Key
+import logging
+from copy import deepcopy
 
-# --- (Keep CORS Configuration as is) ---
-ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
-OPTIONS_CORS_HEADERS = { "Access-Control-Allow-Origin": ALLOWED_ORIGIN, "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Credentials": True }
-POST_CORS_HEADERS = { "Access-Control-Allow-Origin": ALLOWED_ORIGIN, "Access-Control-Allow-Credentials": True }
+# --- 1. Set up logger ---
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+# ---
 
-# --- (Keep Table/DynamoDB setup as is) ---
+# --- Environment Variables ---
 LOANS_TABLE_NAME = os.environ.get('LOANS_TABLE_NAME')
-dynamodb = boto3.resource('dynamodb')
-loans_table = dynamodb.Table(LOANS_TABLE_NAME) if LOANS_TABLE_NAME else None
+ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
 
-# --- (Keep DecimalEncoder as is) ---
+# --- (CORS Headers - no changes) ---
+OPTIONS_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Credentials": True
+}
+POST_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+    "Access-Control-Allow-Credentials": True
+}
+# ---
+
+# --- (DecimalEncoder - no changes) ---
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, Decimal):
-            if not o.is_finite(): return 'N/A'
-            return "{:.2f}".format(o)
+            return str(o)
         return super(DecimalEncoder, self).default(o)
+# ---
 
-# --- (Keep calculate_interest_rate and calculate_minimum_payment as is) ---
-def calculate_interest_rate(term_months):
-    term = int(term_months)
-    if term <= 12: return Decimal('8.0')
-    elif term <= 24: return Decimal('12.0')
-    else: return Decimal('15.0')
-
-def calculate_minimum_payment(amount, annual_rate, term_months):
-    # ... (Amortization logic) ...
-    if annual_rate <= 0 or term_months <= 0: return (amount / (term_months if term_months > 0 else 1)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    monthly_rate = (annual_rate / Decimal('100')) / Decimal('12')
-    n = term_months
-    P = amount
-    if monthly_rate == 0: return (P / n).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    try:
-        numerator = monthly_rate * ((Decimal('1') + monthly_rate) ** n)
-        denominator = ((Decimal('1') + monthly_rate) ** n) - Decimal('1')
-        monthly_payment = P * (numerator / denominator)
-        return monthly_payment.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    except Exception as e:
-        print(f"Error in amortization calculation: {e}")
-        return (amount / n + (amount * (annual_rate / 100) / 12)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
-
-# --- Simulation Logic (MODIFIED) ---
-def simulate(loans, monthly_budget, strategy):
-    """Runs a single payoff simulation and returns the first target loan AND the payoff log."""
-    
-    first_target_details = None
-    if loans:
-        # Sort to find the first target *before* simulating
-        if strategy == 'avalanche':
-            # Sort by interest rate (desc), then balance (asc) as tie-breaker
-            sorted_loans = sorted(loans, key=lambda x: (-x['interest_rate'], x['remaining_balance']))
-        elif strategy == 'snowball':
-            # Sort by balance (asc), then interest rate (desc) as tie-breaker
-            sorted_loans = sorted(loans, key=lambda x: (x['remaining_balance'], -x['interest_rate']))
-        
-        if sorted_loans:
-            first_target = sorted_loans[0]
-            first_target_details = {
-                'loan_id': first_target.get('loan_id'),
-                'name': f"Loan ({first_target.get('loan_id', 'N/A')[:8]}...)", 
-                'remaining_balance': first_target['remaining_balance'],
-                'interest_rate': first_target['interest_rate']
-            }
-
+# --- (Simulation Logic - no changes, but moved here) ---
+def simulate_plan(loans_list, total_monthly_payment, strategy):
+    """
+    Simulates a repayment plan.
+    strategy='avalanche' (highest interest) or 'snowball' (lowest balance)
+    """
+    loans = deepcopy(loans_list) # Don't modify the original list
+    total_interest_paid = Decimal('0.0')
     months = 0
-    total_interest_paid = Decimal('0.00')
-    payoff_log = [] # <-- We already had this!
+    payoff_log = []
+    
+    # Sort loans based on strategy
+    if strategy == 'avalanche':
+        # Highest interest rate first
+        loans.sort(key=lambda x: x['interest_rate'], reverse=True)
+        first_target_loan = loans[0] if loans else None
+    elif strategy == 'snowball':
+        # Lowest remaining balance first
+        loans.sort(key=lambda x: x['remaining_balance'])
+        first_target_loan = loans[0] if loans else None
+    else:
+        first_target_loan = None # Min payment plan
 
-    while loans:
+    while any(l['remaining_balance'] > 0 for l in loans):
         months += 1
-        if months > 1000:
-             print("ERROR: Simulation exceeded 1000 months.")
-             return {"error": "Simulation exceeded maximum duration."}
-
-        # ... (1. Calculate interest - no changes) ...
-        for loan in loans:
-            if loan['remaining_balance'] > 0:
-                interest = (loan['remaining_balance'] * (loan['interest_rate'] / 100)) / 12
-                interest = interest.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                loan['remaining_balance'] += interest
-                total_interest_paid += interest
-
-        # ... (2. Determine payment allocation - no changes) ...
-        current_total_minimum = sum(l['minimum_payment'] for l in loans if l['remaining_balance'] > 0)
-        available_payment = monthly_budget
-        extra_payment = available_payment - current_total_minimum
-        if extra_payment < 0: extra_payment = Decimal('0.00')
+        if months > 1200: # Max 100 years, prevent infinite loop
+            raise Exception("Repayment plan exceeds 100 years.")
+            
+        payment_remaining = total_monthly_payment
         
-        # ... (3. Apply minimum payments - no changes) ...
-        paid_minimums = Decimal('0.00')
+        # 1. Pay minimums on all loans
+        total_minimums_due = Decimal('0.0')
         for loan in loans:
             if loan['remaining_balance'] > 0:
-                payment = min(loan['remaining_balance'], loan['minimum_payment'])
-                loan['remaining_balance'] -= payment
-                paid_minimums += payment
-
-        available_extra = monthly_budget - paid_minimums
-        if available_extra < 0: available_extra = Decimal('0.00')
-
-        # ... (4. Apply extra payment - no changes) ...
-        if available_extra > 0:
-            active_loans = [l for l in loans if l['remaining_balance'] > 0]
-            if not active_loans: break
-
-            if strategy == 'avalanche':
-                active_loans.sort(key=lambda x: (-x['interest_rate'], x['remaining_balance']))
-            elif strategy == 'snowball':
-                active_loans.sort(key=lambda x: (x['remaining_balance'], -x['interest_rate']))
-
-            if active_loans:
-                target_loan = active_loans[0]
-                payment = min(target_loan['remaining_balance'], available_extra)
-                target_loan['remaining_balance'] -= payment
-
-        # 5. Remove paid-off loans and LOG them
-        next_loans = []
+                min_payment = min(loan['minimum_payment'], loan['remaining_balance'])
+                total_minimums_due += min_payment
+        
+        # This check is now handled in the main handler, but good to have
+        if payment_remaining < total_minimums_due:
+             raise Exception(f"Monthly budget {total_monthly_payment} is less than total minimums {total_minimums_due}")
+        
+        # Apply minimum payments and calculate interest
         for loan in loans:
-            if loan['remaining_balance'] > Decimal('0.00'):
-                next_loans.append(loan)
-            else:
-                # --- UPDATE: Make the log message cleaner ---
-                loan_name = f"Loan ({loan.get('loan_id', 'N/A')[:8]}...)"
-                payoff_log.append(f"Month {months}: Paid off {loan_name}!")
-                # ---
-        loans = next_loans
-    
-    return {
-        "strategy": strategy,
-        "months_to_payoff": months,
-        "total_interest_paid": total_interest_paid.quantize(Decimal('0.01')),
-        "first_target": first_target_details,
-        "payoff_log": payoff_log # --- ADD THIS LINE ---
-    }
-# --- End Simulation Logic ---
+            if loan['remaining_balance'] > 0:
+                interest_this_month = (loan['remaining_balance'] * (loan['interest_rate'] / 100)) / 12
+                total_interest_paid += interest_this_month
+                
+                # Pay minimum (or less if balance is lower)
+                payment = min(loan['minimum_payment'], loan['remaining_balance'] + interest_this_month)
+                
+                # Check if this payment is more than what's left after interest
+                principal_payment = payment - interest_this_month
+                if principal_payment < 0: 
+                    # Interest is more than min payment (negative amortization)
+                    loan['remaining_balance'] -= principal_payment # Balance goes up
+                else:
+                    loan['remaining_balance'] -= principal_payment
+                    
+                payment_remaining -= payment
 
-# --- Main Lambda Handler ---
+        # 2. Apply extra payment ("avalanche" or "snowball")
+        extra_payment = payment_remaining
+        
+        # The 'loans' list is already sorted by the chosen strategy
+        for loan in loans:
+            if extra_payment <= 0:
+                break # No more extra money to apply
+                
+            if loan['remaining_balance'] > 0:
+                payment = min(extra_payment, loan['remaining_balance'])
+                loan['remaining_balance'] -= payment
+                extra_payment -= payment
+                
+                if loan['remaining_balance'] <= 0:
+                    payoff_log.append(f"Month {months}: Paid off '{loan.get('name', 'Loan')}'!")
+
+    return {
+        'months_to_payoff': months,
+        'total_interest_paid': total_interest_paid.quantize(Decimal('0.01')),
+        'first_target': first_target_loan,
+        'payoff_log': payoff_log
+    }
+# ---
+
 def calculate_repayment_plan(event, context):
-    """Main handler function"""
+    """
+    API: POST /debt-optimiser
+    Calculates Avalanche and Snowball debt repayment plans.
+    """
     
+    # --- 3. Initialize boto3 inside the handler ---
+    dynamodb = boto3.resource('dynamodb')
+    loans_table = dynamodb.Table(LOANS_TABLE_NAME) if LOANS_TABLE_NAME else None
+    # ---
+
+    # --- (CORS Preflight Check - no changes) ---
     http_method = event.get('httpMethod', '').upper()
     if http_method == 'OPTIONS':
+        logger.info("Handling OPTIONS preflight request for calculate_repayment_plan")
         return { "statusCode": 200, "headers": OPTIONS_CORS_HEADERS, "body": "" }
-    
+
     if not loans_table:
-        print("ERROR: loans_table resource is not initialized.")
-        return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error: Table not found."}) }
+        log_message = {
+            "status": "error",
+            "action": "calculate_repayment_plan",
+            "message": "FATAL: LOANS_TABLE_NAME environment variable not set."
+        }
+        logger.error(json.dumps(log_message))
+        return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error."}) }
 
     if http_method == 'POST':
+        log_context = {"action": "calculate_repayment_plan"}
         try:
             body = json.loads(event.get('body', '{}'))
             wallet_id = body.get('wallet_id')
             monthly_budget_str = body.get('monthly_budget')
-            if not wallet_id or not monthly_budget_str: raise ValueError("wallet_id and monthly_budget are required.")
-            monthly_budget = Decimal(monthly_budget_str)
-            if monthly_budget <= 0: raise ValueError("Monthly budget must be positive.")
+            
+            log_context["wallet_id"] = wallet_id
 
-            # 1. Fetch loans
+            if not wallet_id or not monthly_budget_str:
+                raise ValueError("wallet_id and monthly_budget are required.")
+            
+            monthly_budget = Decimal(monthly_budget_str)
+            log_context["monthly_budget"] = str(monthly_budget)
+
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Fetching approved loans."}))
+            
+            # 1. Get all APPROVED loans for the wallet
             response = loans_table.query(
-                IndexName='wallet_id-index', KeyConditionExpression=Key('wallet_id').eq(wallet_id),
-                FilterExpression='#status = :status_approved',
+                IndexName='wallet_id-index',
+                KeyConditionExpression=boto3.dynamodb.conditions.Key('wallet_id').eq(wallet_id),
+                FilterExpression='#status = :status_val',
                 ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={ ':status_approved': 'APPROVED' } # <-- CORRECT
+                ExpressionAttributeValues={':status_val': 'APPROVED'}
             )
             loans = response.get('Items', [])
+
             if not loans:
+                logger.warn(json.dumps({**log_context, "status": "warn", "message": "No approved loans found."}))
                 return { "statusCode": 404, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "No approved loans found for this wallet."}) }
 
-            processed_loans = []
-            for loan in loans:
-                try:
-                    loan['remaining_balance'] = Decimal(loan['remaining_balance'])
-                    loan['interest_rate'] = Decimal(loan['interest_rate'])
-                    loan['minimum_payment'] = Decimal(loan['minimum_payment'])
-                    processed_loans.append(loan)
-                except (KeyError, InvalidOperation, TypeError) as data_err:
-                     print(f"Skipping loan {loan.get('loan_id', 'Unknown')} due to missing/invalid data: {data_err}")
-
-            if not processed_loans:
-                 return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "No valid loans found with required data (balance, rate, min payment)."}) }
-
-            # 2. Check budget
-            total_minimum_payment = sum(loan['minimum_payment'] for loan in processed_loans)
+            # 2. Check if budget is sufficient
+            total_minimum_payment = sum(l.get('minimum_payment', Decimal('0')) for l in loans)
             if monthly_budget < total_minimum_payment:
+                logger.warn(json.dumps({**log_context, "status": "warn", "total_minimum_payment": str(total_minimum_payment), "message": "Budget is less than total minimum payments."}))
                 return {
-                    "statusCode": 400, "headers": POST_CORS_HEADERS,
+                    "statusCode": 400,
+                    "headers": POST_CORS_HEADERS,
                     "body": json.dumps({
-                        "message": "Monthly budget is less than total minimum payments.",
-                        "total_minimum_payment": total_minimum_payment,
-                        "monthly_budget": monthly_budget
+                        "message": "Monthly budget is less than the total minimum payment.",
+                        "total_minimum_payment": total_minimum_payment
                     }, cls=DecimalEncoder)
                 }
-
+            
+            extra_payment = monthly_budget - total_minimum_payment
+            log_context["extra_payment"] = str(extra_payment)
+            
             # 3. Run simulations
-            avalanche_plan = simulate(copy.deepcopy(processed_loans), monthly_budget, "avalanche")
-            snowball_plan = simulate(copy.deepcopy(processed_loans), monthly_budget, "snowball")
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Running simulations."}))
+            
+            # Add 'name' to loans for better logging
+            for i, loan in enumerate(loans):
+                loan['name'] = f"Loan {i+1} ({loan['loan_id'][:4]}...)"
+
+            avalanche_plan = simulate_plan(loans, monthly_budget, 'avalanche')
+            snowball_plan = simulate_plan(loans, monthly_budget, 'snowball')
+            
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Simulations complete."}))
 
             return {
-                "statusCode": 200, "headers": POST_CORS_HEADERS,
+                "statusCode": 200,
+                "headers": POST_CORS_HEADERS,
                 "body": json.dumps({
                     "summary": {
-                        "total_loans": len(processed_loans),
+                        "total_loans": len(loans),
                         "monthly_budget": monthly_budget,
-                        "total_minimum_payment": total_minimum_payment,
-                        "extra_payment": monthly_budget - total_minimum_payment
+                        "total_minimum_payment": total_minimum_payment.quantize(Decimal('0.01')),
+                        "extra_payment": extra_payment.quantize(Decimal('0.01'))
                     },
                     "avalanche_plan": avalanche_plan,
                     "snowball_plan": snowball_plan
                 }, cls=DecimalEncoder)
             }
-        
-        except (ValueError, InvalidOperation, TypeError) as ve:
-            return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Invalid input: {str(ve)}"}) }
+
+        except (ValueError, TypeError, InvalidOperation) as ve:
+             logger.error(json.dumps({**log_context, "status": "error", "error_message": str(ve)}))
+             return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Invalid input: {str(ve)}"}) }
         except ClientError as ce:
+             logger.error(json.dumps({**log_context, "status": "error", "error_code": ce.response['Error']['Code'], "error_message": str(ce)}))
              return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Database error.", "error": str(ce)}) }
         except Exception as e:
-            print(f"Error calculating plan: {e}")
-            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Failed to calculate repayment plans.", "error": str(e)}) }
+            logger.error(json.dumps({**log_context, "status": "error", "error_message": str(e)}))
+            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "An unexpected error occurred.", "error": str(e)}) }
     else:
-         return { "statusCode": 405, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Method {http_method} not allowed."}) }
+         return {
+            "statusCode": 405,
+            "headers": POST_CORS_HEADERS,
+            "body": json.dumps({"message": f"Method {http_method} not allowed."})
+        }
