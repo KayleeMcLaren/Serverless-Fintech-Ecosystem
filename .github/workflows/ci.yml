@@ -33,7 +33,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest tests/
+          python3 -m pytest tests/
 
   validate-terraform:
     name: Validate Terraform
