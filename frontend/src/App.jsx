@@ -53,47 +53,47 @@ function App() {
     // User is logged in, show the main app
     return (
       <>
-        <header className="text-center mb-6 flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-neutral-800">Serverless Banking Core</h1>
-          <button
-            onClick={logOut}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-neutral-500 hover:text-primary-blue focus:outline-none"
-            title="Log Out"
-          >
-            <ArrowRightEndOnRectangleIcon className="h-5 w-5" />
-            <span className="hidden sm:inline">Log Out</span>
-          </button>
-        </header>
+      <header className="mb-6 flex justify-between items-center">
+        <h1 className="text-3xl font-bold text-neutral-800 flex-1 text-center">Serverless Banking Core</h1>
+        <button
+        onClick={logOut}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-neutral-500 hover:text-primary-blue focus:outline-none"
+        title="Log Out"
+        >
+        <ArrowRightEndOnRectangleIcon className="h-5 w-5" />
+        <span className="hidden sm:inline">Log Out</span>
+        </button>
+      </header>
 
-        <nav className="flex flex-wrap justify-center border-b border-neutral-300 mb-8 -space-x-px">
-          {[
-            { id: 'dashboard', label: 'Dashboard', Icon: HomeIcon },
-            { id: 'wallet', label: 'Wallet', Icon: WalletIcon },
-            { id: 'savings', label: 'Savings', Icon: BanknotesIcon },
-            { id: 'loans', label: 'Loans', Icon: CreditCardIcon },
-            { id: 'payments', label: 'Payments', Icon: ArrowsRightLeftIcon },
-            { id: 'optimiser', label: 'Debt Plan', Icon: ScaleIcon },
-            { id: 'admin', label: 'Admin Tools', Icon: WrenchScrewdriverIcon },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => { setActiveTab(tab.id); }}
-              className={`flex items-center gap-1.5 py-2 px-3 text-xs sm:text-sm font-medium focus:outline-none whitespace-nowrap border-b-2
-                ${activeTab === tab.id
-                ? 'border-primary-blue text-primary-blue'
-                : 'text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 border-transparent'
-              }`}
-            >
-              <tab.Icon className="h-5 w-5" />
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+      <nav className="flex flex-wrap justify-center border-b border-neutral-300 mb-8 -space-x-px">
+        {[
+        { id: 'dashboard', label: 'Dashboard', Icon: HomeIcon },
+        { id: 'wallet', label: 'Wallet', Icon: WalletIcon },
+        { id: 'savings', label: 'Savings', Icon: BanknotesIcon },
+        { id: 'loans', label: 'Loans', Icon: CreditCardIcon },
+        { id: 'payments', label: 'Payments', Icon: ArrowsRightLeftIcon },
+        { id: 'optimiser', label: 'Debt Plan', Icon: ScaleIcon },
+        { id: 'admin', label: 'Admin Tools', Icon: WrenchScrewdriverIcon },
+        ].map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => { setActiveTab(tab.id); }}
+          className={`flex items-center gap-1.5 py-2 px-3 text-xs sm:text-sm font-medium focus:outline-none whitespace-nowrap border-b-2
+          ${activeTab === tab.id
+          ? 'border-primary-blue text-primary-blue'
+          : 'text-neutral-500 hover:text-neutral-700 hover:border-neutral-300 border-transparent'
+          }`}
+        >
+          <tab.Icon className="h-5 w-5" />
+          {tab.label}
+        </button>
+        ))}
+      </nav>
 
-        <main>
-          {!wallet && <DemoGuide />}
-          {renderTabContent()}
-        </main>
+      <main>
+        {!wallet && <DemoGuide />}
+        {renderTabContent()}
+      </main>
       </>
     );
   };

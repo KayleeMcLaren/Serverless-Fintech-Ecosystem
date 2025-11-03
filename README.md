@@ -6,15 +6,29 @@
 
 *(This demo environment is deployed from the `main` branch using the `prd` Terraform workspace.)*
 
+---
+
+## ✨ Core Technical Achievements (Production-Grade Features)
+This project was developed with a relentless focus on modern, cloud-native engineering practices to demonstrate expertise in highly available, secure, and maintainable systems.
+
+| Category | Achievement | Implementation Details |
+| :--- | :---: | :--- |
+| **🔒 Security & Auth** | Secured All APIs with Cognito | Every major endpoint (20+ routes) is protected using an AWS Cognito Authorizer to validate JWT tokens, ensuring a production-ready, multi-user system architecture. |
+| **🧪 Testing & CI/CD** | Automated Unit Testing | Implemented Pytest and Moto (AWS mocking) unit tests for core financial logic and integrated them into the GitHub Actions CI/CD pipeline to guarantee zero regressions. |
+| **📊 Observability** | Structured JSON Logging | Refactored all 20+ Lambda handlers to output queryable JSON logs (instead of plaintext), dramatically improving the efficiency of debugging and monitoring in CloudWatch Log Insights. |
+| **🔄 Workflow Mgmt** | Step Function Orchestration | Implemented a reliable, non-blocking user onboarding workflow (KYC/Wallet creation) managed by AWS Step Functions (SFN). |
+| **💰 Financial Logic** | Stable Amortization Engine | Replaced brittle simulation logic with a stable mathematical projection engine, accurately calculating interest saved and payoff time for accelerated debt repayment. |
+
+---
+
 ## 📖 About This Project
 
-This is a portfolio project demonstrating a complete, serverless, and event-driven fintech ecosystem built on Amazon Web Services (AWS). This includes a complete **React frontend** (hosted on S3/CloudFront) and a decoupled backend built from **five distinct microservices**.
+This is a portfolio project demonstrating a complete, **serverless**, and **event-driven fintech ecosystem** built on Amazon Web Services (AWS). It is designed to be highly scalable, resilient, and maintainable, mirroring modern cloud-native design patterns.
 
-This is not a single monolith. It is a collection of services that communicate asynchronously using **SNS (Simple Notification Service)**. This architecture is designed to be highly scalable, resilient, and maintainable, mirroring modern cloud-native design patterns.
+All infrastructure is provisioned and managed using **Terraform**, demonstrating **Infrastructure as Code (IaC)** best practices, including **multi-environment workspaces** (`stg` and `prd`).
 
-All infrastructure is provisioned and managed using **Terraform**, demonstrating Infrastructure as Code (IaC) best practices, including **multi-environment workspaces** (`stg` and `prd`).
 
-## ✅ Projec Status: Complete
+## ✅ Project Status: Complete
 
 | Service | Status | Description |
 | :--- | :---: | :--- |
@@ -23,7 +37,7 @@ All infrastructure is provisioned and managed using **Terraform**, demonstrating
 | **Micro-Loan System** | ✅ | Manages loan applications, approvals, rejections, and repayments. |
 | **Payment Simulator** | ✅ | Asynchronous, event-driven payment processing saga. |
 | **Savings Goal Manager** | ✅ | Manages CRUD for savings goals and handles atomic fund transfers. |
-| **Debt Repayment Optimiser** | ✅ | Algorithmic calculator for "Avalanche" vs. "Snowball" payoff plans. |
+| **Debt Repayment Optimiser** | ✅ | Provides projections for accelerated debt payoff plans. |
 
 ---
 
@@ -33,13 +47,39 @@ The system's core design principle is **event-driven choreography**. Services do
 
 ### Key Workflows:
 
-**1. Loan Approval Saga:**
-1.  **Client** (`MicroLoans.jsx`) `POST`s to `/loan/{loan_id}/approve`.
+**1. 🔒 User Authentication & API Security (Foundation):**
+This workflow demonstrates the secure entry point and highlights the serverless automation built into the authentication process.
+1. **Client (React)** sends user credentials (email/password) to **AWS Cognito**.
+2. **Cognito Trigger:** The **Pre Sign-Up Lambda** (`auto_confirm_user`) immediately intercepts the request and sets autoConfirmUser: True and autoVerifyEmail: True. This step **bypasses the standard email verification process** for a streamlined demo experience.
+3. Upon successful login, the **Client** receives a **JWT Token**.
+4. The **Client** attaches this token to the Authorization header of all subsequent API requests.
+5. **API Gateway** uses a **Cognito Authorizer** to validate the token's signature and expiration before forwarding the request to any downstream Lambda handler.
+
+
+**2. 📝 User Onboarding & KYC Orchestration (SFN):**
+This is a **State Machine** (SFN) workflow, guaranteeing sequential, auditable steps for user approval, including a dedicated path for human intervention.
+1. **Client** calls `POST /onboarding/start` (`src/start_onboarding/handler.py`). The Lambda creates a `PENDING_ID_VERIFICATION` record and starts the **Step Function** (SFN).
+2. **SFN Task: ID Verification**
+   * The SFN executes the `verify_id_mock` Lambda (using the logic in `src/verify_id_mock/handler.py`).
+   * The Lambda runs mock logic (checks for `flag@`, `reject`) and returns a simple JSON decision (`{"status": "APPROVED", "message": "..."}`).
+3. **SFN Choice State: Based on the output:**
+   * If `APPROVED`: Proceeds to the `CreditCheck` task.
+   * If `FLAGGED`: Proceeds to the **Human-in-the-Loop** step.
+4. **SFN Task: Human-in-the-Loop**
+   * The SFN pauses via the `DynamoDB:UpdateItem.waitForTaskToken` integration, which writes the `TaskToken` to the user's record in the `users_table`.
+   * The **Admin Tools** calls the `manual_review` API (`src/manual_review_handler/handler.py`). This Lambda retrieves the token and sends a `send_task_success` signal to the SFN to resume the workflow.
+5. **SFN Task: Credit Check**
+   * The SFN executes the `credit_check_mock` Lambda (using the logic in `src/credit_check_mock/handler.py`), which returns a score and a decision.
+6. **SFN Conclusion:** If the credit check is approved, the SFN executes the final `ProvisionAccount` task, which invokes the private `create_wallet` Lambda. The user's final `wallet_id` and `onboarding_status` are set to `APPROVED`.
+
+
+**3. 💸 Loan Approval Saga:**
+1.  **Client** `POST`s to `/loan/{loan_id}/approve`.
 2.  **Micro-Loan Service** (`approve_loan` Lambda) updates the loan status to "APPROVED".
 3.  **Micro-Loan Service** publishes a `LOAN_APPROVED` event to the `loan_events` SNS topic.
 4.  **Digital Wallet Service** (`process_loan_approval` Lambda) receives the event, credits the user's wallet balance, and logs a `LOAN_IN` transaction.
 
-**2. Payment Processing Saga (Choreography):**
+**4. 💳 Payment Processing Saga (Choreography):**
 1.  **Client** (`PaymentSimulator.jsx`) `POST`s to `/payment`.
 2.  **Payment Service** (`request_payment` Lambda) creates a "PENDING" transaction in its DynamoDB table.
 3.  **Payment Service** publishes a `PAYMENT_REQUESTED` event to the `payment_events` SNS topic.
@@ -49,14 +89,14 @@ The system's core design principle is **event-driven choreography**. Services do
     * **On Failure (e.g., insufficient funds):** It publishes a `PAYMENT_FAILED` event.
 6.  **Payment Service** (`update_transaction_status` Lambda) subscribes to the `_SUCCESSFUL` or `_FAILED` events and updates the transaction status from "PENDING" to "SUCCESSFUL" or "FAILED".
 
-**3. Loan Repayment Saga (Choreography):**
+**5. . 📉 Loan Repayment Saga (Choreography):**
 *This saga reuses the exact same components as the Payment Saga.*
 1.  **Client** (`MicroLoans.jsx`) `POST`s to `/loan/{loan_id}/repay`.
 2.  **Micro-Loan Service** (`repay_loan` Lambda) publishes a `LOAN_REPAYMENT_REQUESTED` event to the `payment_events` topic.
 3.  **Digital Wallet Service** (`process_payment_request` Lambda) receives this event, debits the wallet, logs a `LOAN_REPAYMENT` transaction, and publishes a `LOAN_REPAYMENT_SUCCESSFUL` event.
 4.  **Micro-Loan Service** (`update_loan_repayment_status` Lambda) subscribes to this result, receives it, and updates the `remaining_balance` on the loan in the `loans_table`.
 
-**4. Atomic Savings Goal Transaction:**
+**6. 🎯 Atomic Savings Goal Transaction:**
 1.  **Client** (`SavingsGoals.jsx`) `POST`s to `/savings-goal/{id}/add`.
 2.  **Savings Goal Service** (`add_to_savings_goal` Lambda) performs an atomic **DynamoDB Transaction** (`TransactWriteItems`) to simultaneously:
     * **Debit** the main `wallets_table` (with a condition check for sufficient funds).
@@ -69,26 +109,22 @@ The system's core design principle is **event-driven choreography**. Services do
 
 ### Backend & DevOps
 * **Infrastructure as Code:** **Terraform** (with `stg` & `prd` Workspaces)
+* **Authentication:** AWS Cognito (User Pool, JWT Authorizers)
 * **Serverless Compute:** **AWS Lambda** (Python 3.12)
 * **API:** **AWS API Gateway** (REST API)
 * **Database:** **AWS DynamoDB** (including Global Secondary Indexes - GSIs)
+* **Workflow:** AWS Step Functions (SFN)
 * **Event-Driven Messaging:** **AWS SNS** (with Subscription Filter Policies)
 
 ### Frontend
 * **Framework:** **React** (with React Hooks & Context API)
-* **Hosting:** **AWS S3** (Static Website Hosting)
+* **Hosting:** **AWS S3** (Static Website Hosting) 
 * **CDN & Delivery:** **AWS CloudFront** (with OAC)
 * **UI/Styling:** **Tailwind CSS**
-* **Data Visualization:** **Recharts**
 * **Notifications:** **React Hot Toast**
 
 ---
 
-## 🔒 Security Note
-
-This project is currently configured for demo purposes. In a real-world production environment, all API Gateway endpoints would be secured. The recommended next step is to implement an **AWS Cognito User Pool** to manage user sign-up/sign-in and use a **Cognito Authorizer** on API Gateway to validate JWT tokens on all incoming requests.
-
----
 
 ## 📂 Project Structure
 
@@ -106,9 +142,9 @@ Serverless-Fintech-Ecosystem/
 │ │ ├── DebtOptimiser.jsx 
 │ │ ├── ConfirmModal.jsx 
 │ │ ├── Spinner.jsx 
-│ │ └── ...
+│ │ └── ... (All React components updated for Authorization)
 │ │ ├── contexts/
-│ │ │ └── WalletContext.jsx
+│ │ │ └── WalletContext.jsx (Manages Cognito Session)
 │ │ ├── App.jsx
 │ │ └── main.jsx
 │ ├── .env.production
@@ -199,99 +235,14 @@ This workflow is for development.
 
 ---
 
-## 🧪 Testing
+## 🧪 Detailed Testing & Code Quality
 
-Testing an event-driven system involves two main types of tests:
+Code quality is enforced via a GitHub Actions pipeline that executes unit tests and validates all Infrastructure as Code (IaC) before deployment.
 
-### 1. Unit Tests (with `pytest` and `moto`)
-Unit tests are used to test a single Lambda function's logic in isolation. We use `pytest` for the test framework and `moto` to mock all AWS services (DynamoDB, SNS).
+### 1. CI/CD Pipeline (`.github/workflows/ci.yml`)
+The pipeline runs unit tests first, ensuring code quality, and then validates the Terraform configuration.
 
-**To run tests:**
-1.  Install dependencies: `pip install pytest moto[dynamodb,sns]`
-2.  Navigate to the `src` directory: `cd src`
-3.  Run `pytest`: `pytest`
-
-**Example (`src/tests/test_create_wallet.py`):**
-```python
-import pytest
-import boto3
-from moto import mock_dynamodb
-from create_wallet.handler import create_wallet
-import os
-import json
-
-@pytest.fixture
-def mock_env(monkeypatch):
-    """Mocks environment variables."""
-    monkeypatch.setenv("DYNAMODB_TABLE_NAME", "test-wallets")
-    monkeypatch.setenv("TRANSACTIONS_LOG_TABLE_NAME", "test-logs")
-    monkeypatch.setenv("CORS_ORIGIN", "*")
-
-@pytest.fixture
-def mock_db(mock_env):
-    """Mocks DynamoDB."""
-    with mock_dynamodb():
-        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
-        # Create the wallets table
-        dynamodb.create_table(
-            TableName="test-wallets",
-            KeySchema=[{'AttributeName': 'wallet_id', 'KeyType': 'HASH'}],
-            AttributeDefinitions=[{'AttributeName': 'wallet_id', 'AttributeType': 'S'}],
-            BillingMode='PAY_PER_REQUEST'
-        )
-        # Create the logs table
-        dynamodb.create_table(
-            TableName="test-logs",
-            KeySchema=[{'AttributeName': 'transaction_id', 'KeyType': 'HASH'}],
-            AttributeDefinitions=[{'AttributeName': 'transaction_id', 'AttributeType': 'S'}],
-            BillingMode='PAY_PER_REQUEST'
-        )
-        yield dynamodb
-
-def test_create_wallet_success(mock_db):
-    """Tests successful wallet creation."""
-    event = {"httpMethod": "POST", "body": "{}"}
-    context = {}
-    
-    response = create_wallet(event, context)
-    
-    assert response['statusCode'] == 201
-    body = json.loads(response['body'])
-    assert 'wallet' in body
-    assert 'wallet_id' in body['wallet']
-
-    # Verify item was created in the mock DB
-    table = mock_db.Table("test-wallets")
-    item = table.get_item(Key={'wallet_id': body['wallet']['wallet_id']})
-    assert item['Item']['balance'] == 0
-```
-
-### 2. Integration Tests
-Integration tests check the flow between services. A simple way to test this is:
-
-1. Deploy the stack to the `stg` workspace.
-
-2. Manually (or via an AWS CLI script) publish a test `LOAN_APPROVED` event to the `fintech-ecosystem-stg-loan-events` SNS topic.
-
-3. Wait ~5 seconds.
-
-4. Manually (or via script) query the `fintech-ecosystem-stg-wallets` table to assert that the correct wallet's balance was increased.
-
-## 🔄 CI/CD Pipeline
-A basic CI/CD pipeline is defined in .github/workflows/ci.yml. This GitHub Actions workflow triggers on every push to main or dev and:
-
-1. Sets up Python.
-
-2. Installs Python dependencies (e.g., pytest, moto).
-
-3. **Runs Unit Tests** with pytest.
-
-4. Sets up Terraform.
-
-5. **Validates Terraform** with terraform init and terraform validate.
-
-Example (.github/workflows/ci.yml):
-```
+```yaml
 name: CI Pipeline
 
 on:
@@ -304,41 +255,135 @@ jobs:
   test-lambda:
     name: Run Lambda Unit Tests
     runs-on: ubuntu-latest
+    
+    # Set the working directory to the 'src' folder
+    defaults:
+      run:
+        working-directory: ./src
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install dependencies
         run: |
-          # Create/use a requirements.txt in your src folder for libraries like boto3
-          # pip install -r src/requirements.txt
-          pip install pytest moto[dynamodb,sns]
+          pip install -r requirements-dev.txt
+          # We also need boto3, which is available in the Lambda runtime
+          pip install boto3
+
       - name: Run tests
         run: |
-          cd src
-          pytest
+          python3 -m pytest tests/
 
   validate-terraform:
     name: Validate Terraform
     runs-on: ubuntu-latest
-    needs: test-lambda # Run after tests pass
+    needs: test-lambda
+    
+    # Set the working directory to the 'terraform' folder
+    defaults:
+      run:
+        working-directory: ./terraform
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
+
       - name: Terraform Init
-        run: |
-          cd terraform
-          terraform init -backend=false # Don't need state for validation
+        run: terraform init -backend=false
+
       - name: Terraform Validate
-        run: |
-          cd terraform
-          terraform validate
+        run: terraform validate
 ```
+###  2. Unit Test Examples (Pytest + Moto)
+Unit tests mock AWS services like DynamoDB and SNS to ensure core business logic is executed reliably without external network dependencies.
+
+**A. Atomic Savings Transaction** (`tests/test_add_to_savings_goal.py`)
+This test verifies the critical TransactWriteItems operation is atomic (debit wallet, credit goal) and correctly fails when funds are insufficient.
+
+```
+# Mocks: DynamoDB
+
+def test_add_to_savings_goal_success(mock_db):
+    # ARRANGE: Wallet balance: $100.00, Goal balance: $50.00
+    wallets_table = mock_db.Table('test-wallets')
+    savings_table = mock_db.Table('test-savings-goals')
+    wallets_table.put_item(Item={'wallet_id': 'w_123', 'balance': Decimal('100.00')})
+    savings_table.put_item(Item={'goal_id': 'g_123', 'wallet_id': 'w_123', 'current_amount': Decimal('50.00'), ...})
+    
+    # ACT: Attempt to move $25.50
+    response = add_to_savings_goal(event, {})
+
+    # ASSERT:
+    assert response['statusCode'] == 200
+    # Wallet balance is $74.50 (100.00 - 25.50)
+    assert wallets_table.get_item(Key={'wallet_id': 'w_123'})['Item']['balance'] == Decimal('74.50') 
+    # Goal balance is $75.50 (50.00 + 25.50)
+    assert savings_table.get_item(Key={'goal_id': 'g_123'})['Item']['current_amount'] == Decimal('75.50')
+
+def test_add_to_savings_goal_insufficient_funds(mock_db):
+    # ARRANGE: Wallet balance: $10.00 (less than the $25.00 requested)
+    wallets_table.put_item(Item={'wallet_id': 'w_123', 'balance': Decimal('10.00')})
+    
+    # ACT: Attempt to move $25.00
+    response = add_to_savings_goal(event, {})
+    
+    # ASSERT: 
+    assert response['statusCode'] == 400
+    # Balance must remain unchanged
+    assert wallets_table.get_item(Key={'wallet_id': 'w_123'})['Item']['balance'] == Decimal('10.00')
+
+```
+**B. Event-Driven Payment Logic** (`tests/test_process_payment_request.py`)
+This test validates the Lambda's ability to handle different event types (`PAYMENT_REQUESTED` vs `LOAN_REPAYMENT_REQUESTED`) and correctly debit the wallet.
+```
+# Mocks: DynamoDB, SNS
+
+def test_payment_success(mock_aws_clients, mock_sns_event):
+    # ARRANGE: Wallet balance: $100.00. Event requests $40.00 payment.
+    dynamodb, sns = mock_aws_clients
+    wallets_table = dynamodb.Table('test-wallets')
+    wallets_table.put_item(Item={'wallet_id': 'w_123', 'balance': Decimal('100.00')})
+    event = mock_sns_event('PAYMENT_REQUESTED', {'wallet_id': 'w_123', 'amount': Decimal('40.00'), ...})
+
+    # ACT: Process the event
+    response = process_payment_request(event, {})
+
+    # ASSERT: 
+    assert response['statusCode'] == 200
+    # Wallet debited successfully
+    assert wallets_table.get_item(Key={'wallet_id': 'w_123'})['Item']['balance'] == Decimal('60.00')
+    # Transaction is logged
+    assert len(dynamodb.Table('test-transaction-logs').scan()['Items']) == 1
+
+
+def test_payment_insufficient_funds(mock_aws_clients, mock_sns_event):
+    # ARRANGE: Wallet balance: $10.00. Event requests $40.00 payment.
+    dynamodb, sns = mock_aws_clients
+    wallets_table = dynamodb.Table('test-wallets')
+    wallets_table.put_item(Item={'wallet_id': 'w_123', 'balance': Decimal('10.00')})
+    event = mock_sns_event('PAYMENT_REQUESTED', {'wallet_id': 'w_123', 'amount': Decimal('40.00'), ...})
+
+    # ACT: Process the event (should fail conditional check)
+    response = process_payment_request(event, {})
+
+    # ASSERT:
+    assert response['statusCode'] == 200 # Lambda runs successfully
+    # Wallet balance is NOT debited
+    assert wallets_table.get_item(Key={'wallet_id': 'w_123'})['Item']['balance'] == Decimal('10.00')
+    # No log is created
+    assert len(dynamodb.Table('test-transaction-logs').scan()['Items']) == 0
+```
+
+---
 
 ## 🗺️ API Endpoints
 **Base URL:** (From terraform apply output, e.g., .../v1)
@@ -382,4 +427,6 @@ jobs:
 ### Debt Optimiser Service (/debt-optimiser)
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST`| `/debt-optimiser` | Calculates Avalanche vs. Snowball loan repayment plans. |
+| `POST`| `/debt-optimiser` | Calculates accelerated debt payoff projections based on minimum payments and weighted average amortization formulas. |
+
+---
