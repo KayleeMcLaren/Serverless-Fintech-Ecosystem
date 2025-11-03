@@ -1,16 +1,25 @@
 import json
 import os
-import uuid
 import boto3
+import uuid
 import time
-from decimal import Decimal
-from botocore.exceptions import ClientError # Import ClientError
+from decimal import Decimal, InvalidOperation
+from botocore.exceptions import ClientError
+import logging
 
-# --- CORS Configuration ---
+# Set up logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# --- Environment Variables ---
+TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME')
+SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN')
 ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
+
+# --- CORS Headers ---
 OPTIONS_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-    "Access-Control-Allow-Methods": "POST, OPTIONS", # Allow POST
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Credentials": True
 }
@@ -18,15 +27,8 @@ POST_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Credentials": True
 }
-# --- End CORS Configuration ---
 
-TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME')
-SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN')
-
-dynamodb = boto3.resource('dynamodb')
-sns = boto3.client('sns')
-table = dynamodb.Table(TABLE_NAME)
-
+# --- DecimalEncoder ---
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, Decimal):
@@ -35,72 +37,85 @@ class DecimalEncoder(json.JSONEncoder):
 
 def request_payment(event, context):
     """
-    Creates a 'PENDING' transaction and publishes 'PAYMENT_REQUESTED'.
-    Handles OPTIONS preflight.
+    API: POST /payment
+    Creates a 'PENDING' transaction and publishes 'PAYMENT_REQUESTED' event.
     """
+    
+    # --- Initialize boto3 clients inside the handler ---
+    dynamodb = boto3.resource('dynamodb')
+    sns = boto3.client('sns')
+    table = dynamodb.Table(TABLE_NAME) if TABLE_NAME else None
+    
     # --- CORS Preflight Check ---
     http_method = event.get('httpMethod', '').upper()
     if http_method == 'OPTIONS':
-        print("Handling OPTIONS request for request_payment")
-        return {
-            "statusCode": 200,
-            "headers": OPTIONS_CORS_HEADERS,
-            "body": ""
+        logger.info("Handling OPTIONS preflight request for request_payment")
+        return { "statusCode": 200, "headers": OPTIONS_CORS_HEADERS, "body": "" }
+    
+    if not table or not SNS_TOPIC_ARN:
+        log_message = {
+            "status": "error",
+            "action": "request_payment",
+            "message": "FATAL: Environment variables not set."
         }
-    # --- End CORS Preflight Check ---
+        logger.error(json.dumps(log_message))
+        return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error."}) }
 
-    # --- POST Logic ---
     if http_method == 'POST':
-        print("Handling POST request for request_payment")
+        log_context = {"action": "request_payment"}
         try:
             body = json.loads(event.get('body', '{}'))
-            amount_str = body.get('amount')
             wallet_id = body.get('wallet_id')
             merchant_id = body.get('merchant_id')
+            amount_str = body.get('amount')
 
-            # Validate before converting
-            if not all([amount_str, wallet_id, merchant_id]):
-                 raise ValueError("wallet_id, merchant_id, and amount are required.")
+            log_context["wallet_id"] = wallet_id
+            log_context["merchant_id"] = merchant_id
+
+            if not wallet_id or not merchant_id or not amount_str:
+                raise ValueError("wallet_id, merchant_id, and amount are required.")
+            
             amount = Decimal(amount_str)
             if amount <= 0:
                 raise ValueError("Amount must be positive.")
 
             transaction_id = str(uuid.uuid4())
+            timestamp = int(time.time())
+            
+            log_context.update({
+                "transaction_id": transaction_id,
+                "amount": str(amount)
+            })
+
+            # 1. Create the transaction item
             item = {
                 'transaction_id': transaction_id,
                 'wallet_id': wallet_id,
-                'merchant_id': merchant_id,
                 'amount': amount,
+                'merchant_id': merchant_id,
                 'status': 'PENDING',
-                'created_at': int(time.time())
+                'created_at': timestamp,
+                'updated_at': timestamp
             }
-
-            # 1. Save the PENDING transaction
             table.put_item(Item=item)
-            print(f"Saved PENDING transaction: {transaction_id}")
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Created PENDING transaction."}))
 
-            # 2. Publish the event with MessageAttributes for filtering
-            sns_message = {
-                "event_type": "PAYMENT_REQUESTED",
-                "transaction_details": item
+            # 2. Publish event to SNS
+            event_details = {
+                'transaction_id': transaction_id,
+                'wallet_id': wallet_id,
+                'merchant_id': merchant_id,
+                'amount': amount
             }
             sns.publish(
                 TopicArn=SNS_TOPIC_ARN,
-                Message=json.dumps(sns_message, cls=DecimalEncoder),
-                Subject=f"Payment Requested: {transaction_id}",
+                Message=json.dumps({"event_type": "PAYMENT_REQUESTED", "transaction_details": event_details}, cls=DecimalEncoder),
+                Subject="Payment Requested",
                 MessageAttributes={
-                    'event_type': {
-                        'DataType': 'String',
-                        'StringValue': 'PAYMENT_REQUESTED'
-                    }
+                    'event_type': { 'DataType': 'String', 'StringValue': 'PAYMENT_REQUESTED' }
                 }
             )
-            print(f"Published PAYMENT_REQUESTED event for {transaction_id}")
-
-            response_body = {
-                "message": "Payment request received and is processing.",
-                "transaction": item
-            }
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Published PAYMENT_REQUESTED event."}))
 
             return {
                 "statusCode": 202, # Accepted
@@ -111,24 +126,15 @@ def request_payment(event, context):
                     "transaction": item 
                 }, cls=DecimalEncoder)
             }
-        except (ValueError, TypeError) as ve:
-            print(f"Input Error requesting payment: {ve}")
-            return {
-                "statusCode": 400,
-                "headers": POST_CORS_HEADERS,
-                "body": json.dumps({"message": f"Invalid input: {ve}"})
-            }
+            
+        except (ValueError, TypeError, InvalidOperation) as ve:
+             logger.error(json.dumps({**log_context, "status": "error", "error_message": str(ve)}))
+             return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Invalid input: {str(ve)}"}) }
+        except ClientError as ce:
+             logger.error(json.dumps({**log_context, "status": "error", "error_code": ce.response['Error']['Code'], "error_message": str(ce)}))
+             return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "AWS service error.", "error": str(ce)}) }
         except Exception as e:
-            print(f"Error requesting payment: {e}")
-            return {
-                "statusCode": 500,
-                "headers": POST_CORS_HEADERS,
-                "body": json.dumps({"message": "Failed to request payment.", "error": str(e)})
-            }
+            logger.error(json.dumps({**log_context, "status": "error", "error_message": str(e)}))
+            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "An unexpected error occurred.", "error": str(e)}) }
     else:
-        print(f"Unsupported method: {http_method}")
-        return {
-            "statusCode": 405,
-            "headers": POST_CORS_HEADERS,
-            "body": json.dumps({"message": f"Method {http_method} not allowed."})
-        }
+         return { "statusCode": 405, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Method {http_method} not allowed."}) }

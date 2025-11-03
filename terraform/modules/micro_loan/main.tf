@@ -119,6 +119,7 @@ resource "aws_lambda_function" "apply_for_loan_lambda" {
   source_code_hash = data.archive_file.apply_for_loan_zip.output_base64sha256
   handler          = "handler.apply_for_loan"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -142,6 +143,7 @@ resource "aws_lambda_function" "get_loan_lambda" {
   source_code_hash = data.archive_file.get_loan_zip.output_base64sha256
   handler          = "handler.get_loan"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -165,6 +167,7 @@ resource "aws_lambda_function" "get_loans_by_wallet_lambda" {
   source_code_hash = data.archive_file.get_loans_by_wallet_zip.output_base64sha256
   handler          = "handler.get_loans_by_wallet"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -188,6 +191,7 @@ resource "aws_lambda_function" "approve_loan_lambda" {
   source_code_hash = data.archive_file.approve_loan_zip.output_base64sha256
   handler          = "handler.approve_loan"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -212,6 +216,7 @@ resource "aws_lambda_function" "reject_loan_lambda" {
   source_code_hash = data.archive_file.reject_loan_zip.output_base64sha256
   handler          = "handler.reject_loan"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -235,6 +240,7 @@ resource "aws_lambda_function" "repay_loan_lambda" {
   source_code_hash = data.archive_file.repay_loan_zip.output_base64sha256
   handler          = "handler.repay_loan"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -263,6 +269,7 @@ resource "aws_lambda_function" "update_loan_repayment_status_lambda" {
   source_code_hash = data.archive_file.update_loan_repayment_status_zip.output_base64sha256
   handler          = "handler.update_loan_repayment_status"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {

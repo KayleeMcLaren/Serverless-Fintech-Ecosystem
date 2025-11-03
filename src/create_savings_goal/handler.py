@@ -1,114 +1,118 @@
 import json
 import os
-import uuid
 import boto3
+import uuid
 import time
-from decimal import Decimal
-from botocore.exceptions import ClientError # Import ClientError
+from decimal import Decimal, InvalidOperation
+from botocore.exceptions import ClientError
+import logging
 
-# --- CORS Configuration ---
+# Set up logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# --- Environment Variables ---
+TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME')
 ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
+
+# --- CORS Headers ---
 OPTIONS_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-    "Access-Control-Allow-Methods": "POST, OPTIONS", # Allow POST for creation
-    "Access-Control-Allow-Headers": "Content-Type, Authorization", # Common headers
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Credentials": True
 }
 POST_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Credentials": True
 }
-# --- End CORS Configuration ---
 
-TABLE_NAME = os.environ.get('DYNAMODB_TABLE_NAME')
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table(TABLE_NAME)
-
+# --- DecimalEncoder ---
 class DecimalEncoder(json.JSONEncoder):
-    """Helper class to convert a DynamoDB item to JSON."""
     def default(self, o):
         if isinstance(o, Decimal):
             return str(o)
         return super(DecimalEncoder, self).default(o)
 
 def create_savings_goal(event, context):
-    """Creates a new savings goal. Handles OPTIONS preflight."""
-
+    """
+    API: POST /savings-goal
+    Creates a new savings goal for a given wallet.
+    """
+    
+    # --- Initialize boto3 inside the handler ---
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(TABLE_NAME) if TABLE_NAME else None
+    
     # --- CORS Preflight Check ---
     http_method = event.get('httpMethod', '').upper()
     if http_method == 'OPTIONS':
-        print("Handling OPTIONS request for create_savings_goal")
-        return {
-            "statusCode": 200,
-            "headers": OPTIONS_CORS_HEADERS,
-            "body": ""
-        }
-    # --- End CORS Preflight Check ---
+        logger.info("Handling OPTIONS preflight request for create_savings_goal")
+        return { "statusCode": 200, "headers": OPTIONS_CORS_HEADERS, "body": "" }
 
-    # --- POST Logic ---
+    if not table:
+        log_message = {
+            "status": "error",
+            "action": "create_savings_goal",
+            "message": "FATAL: DYNAMODB_TABLE_NAME environment variable not set."
+        }
+        logger.error(json.dumps(log_message))
+        return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error."}) }
+
     if http_method == 'POST':
-        print("Handling POST request for create_savings_goal")
+        log_context = {"action": "create_savings_goal"}
         try:
             body = json.loads(event.get('body', '{}'))
-
             wallet_id = body.get('wallet_id')
             goal_name = body.get('goal_name')
-            target_amount_str = body.get('target_amount') # Get as string first
+            target_amount_str = body.get('target_amount')
 
-            # Validate target_amount before converting
-            if not target_amount_str:
-                 raise ValueError("target_amount is required.")
+            log_context["wallet_id"] = wallet_id
+
+            if not wallet_id or not goal_name or not target_amount_str:
+                raise ValueError("wallet_id, goal_name, and target_amount are required.")
+            
             target_amount = Decimal(target_amount_str)
-
-            if not all([wallet_id, goal_name]) or target_amount <= 0:
-                print("Validation failed: Missing fields or non-positive amount.")
-                return {
-                    "statusCode": 400,
-                    "headers": POST_CORS_HEADERS,
-                    "body": json.dumps({"message": "Valid wallet_id, goal_name, and positive target_amount are required."})
-                }
+            if target_amount <= 0:
+                raise ValueError("Target amount must be positive.")
 
             goal_id = str(uuid.uuid4())
+            timestamp = int(time.time())
+            
+            log_context.update({
+                "goal_id": goal_id,
+                "goal_name": goal_name,
+                "target_amount": str(target_amount)
+            })
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Creating new savings goal."}))
+
             item = {
                 'goal_id': goal_id,
                 'wallet_id': wallet_id,
                 'goal_name': goal_name,
                 'target_amount': target_amount,
-                'current_amount': Decimal('0.00'),
-                'created_at': int(time.time())
+                'current_amount': Decimal('0.00'), # Start at 0
+                'created_at': timestamp,
             }
-
+            
             table.put_item(Item=item)
-
-            response_body = {
-                "message": "Savings goal created successfully!",
-                "goal": item
-            }
+            
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Savings goal created successfully."}))
 
             return {
-                "statusCode": 201,
+                "statusCode": 201, # Created
                 "headers": POST_CORS_HEADERS,
-                "body": json.dumps(response_body, cls=DecimalEncoder)
+                "body": json.dumps({"message": "Savings goal created!", "goal": item}, cls=DecimalEncoder)
             }
-        except (ValueError, TypeError) as ve: # Catch Decimal conversion errors specifically
-            print(f"Input Error: {ve}")
-            return {
-                "statusCode": 400,
-                "headers": POST_CORS_HEADERS,
-                "body": json.dumps({"message": f"Invalid input format: {ve}"})
-            }
+            
+        except (ValueError, TypeError, InvalidOperation) as ve:
+             logger.error(json.dumps({**log_context, "status": "error", "error_message": str(ve)}))
+             return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Invalid input: {str(ve)}"}) }
+        except ClientError as ce:
+             logger.error(json.dumps({**log_context, "status": "error", "error_code": ce.response['Error']['Code'], "error_message": str(ce)}))
+             return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Database error.", "error": str(ce)}) }
         except Exception as e:
-            print(f"Error creating savings goal: {e}")
-            return {
-                "statusCode": 500,
-                "headers": POST_CORS_HEADERS,
-                "body": json.dumps({"message": "Failed to create savings goal.", "error": str(e)})
-            }
+            logger.error(json.dumps({**log_context, "status": "error", "error_message": str(e)}))
+            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "An unexpected error occurred.", "error": str(e)}) }
     else:
-        # Handle unsupported methods
-        print(f"Unsupported method: {http_method}")
-        return {
-            "statusCode": 405, # Method Not Allowed
-            "headers": POST_CORS_HEADERS, # Still include CORS for error
-            "body": json.dumps({"message": f"Method {http_method} not allowed."})
-        }
+         return { "statusCode": 405, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Method {http_method} not allowed."}) }

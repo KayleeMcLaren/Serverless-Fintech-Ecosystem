@@ -20,6 +20,7 @@ import {
 // Import context
 import { useWallet } from './contexts/WalletContext';
 
+
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   
@@ -53,7 +54,7 @@ function App() {
     return (
       <>
         <header className="text-center mb-6 flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-neutral-800">Serverless Fintech</h1>
+          <h1 className="text-3xl font-bold text-neutral-800">Serverless Banking Core</h1>
           <button
             onClick={logOut}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-neutral-500 hover:text-primary-blue focus:outline-none"

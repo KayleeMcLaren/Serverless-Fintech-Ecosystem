@@ -6,6 +6,11 @@ import time
 from decimal import Decimal
 from urllib.parse import unquote
 from botocore.exceptions import ClientError
+import logging
+
+# Set up logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # --- Table Names & CORS ---
 SAVINGS_TABLE_NAME = os.environ.get('SAVINGS_TABLE_NAME')
@@ -13,17 +18,10 @@ WALLETS_TABLE_NAME = os.environ.get('WALLETS_TABLE_NAME')
 LOG_TABLE_NAME = os.environ.get('TRANSACTIONS_LOG_TABLE_NAME')
 ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
 
-# --- AWS Resources ---
-dynamodb_resource = boto3.resource('dynamodb')
-dynamodb_client = boto3.client('dynamodb')
-savings_table = dynamodb_resource.Table(SAVINGS_TABLE_NAME) if SAVINGS_TABLE_NAME else None
-wallets_table = dynamodb_resource.Table(WALLETS_TABLE_NAME) if WALLETS_TABLE_NAME else None
-log_table = dynamodb_resource.Table(LOG_TABLE_NAME) if LOG_TABLE_NAME else None
-
 # --- CORS Headers ---
 OPTIONS_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-    "Access-Control-Allow-Methods": "POST, OPTIONS", # Allow POST
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Credentials": True
 }
@@ -32,17 +30,17 @@ POST_CORS_HEADERS = {
     "Access-Control-Allow-Credentials": True
 }
 
-# --- (Keep DecimalEncoder as is) ---
+# --- DecimalEncoder ---
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, Decimal):
             return str(o)
         return super(DecimalEncoder, self).default(o)
 
-# --- (Keep Transaction Logging Helper as is) ---
-def log_transaction(wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
+# --- Transaction Logging Helper ---
+def log_transaction(log_table, wallet_id, tx_type, amount, new_balance=None, related_id=None, details=None):
     if not log_table:
-        print("Log table name not configured, skipping log.")
+        logger.warning(json.dumps({"status": "warn", "action": "log_transaction", "message": "Log table not configured."}))
         return
     try:
         timestamp = int(time.time())
@@ -60,38 +58,69 @@ def log_transaction(wallet_id, tx_type, amount, new_balance=None, related_id=Non
              log_item['balance_after'] = 'N/A'
 
         log_table.put_item(Item=log_item)
-        print(f"Logged transaction: {log_item['transaction_id']} for wallet {wallet_id}")
+        
+        log_message = {
+            "status": "info",
+            "action": "log_transaction",
+            "wallet_id": wallet_id,
+            "transaction_id": log_item['transaction_id'],
+            "type": tx_type
+        }
+        logger.info(json.dumps(log_message))
+
     except Exception as log_e:
-        print(f"ERROR logging transaction: {log_e}")
-# --- End Helper ---
+        log_message = {
+            "status": "error",
+            "action": "log_transaction",
+            "wallet_id": wallet_id,
+            "error_message": str(log_e)
+        }
+        logger.error(json.dumps(log_message))
+# ---
 
 def redeem_savings_goal(event, context):
     """
-    Redeems a completed savings goal.
-    Atomically transfers the balance back to the user's wallet and deletes the goal.
+    API: POST /savings-goal/{goal_id}/redeem
+    Redeems a completed goal, atomically moving funds back to the wallet.
     """
+    
+    # --- Initialize boto3 clients inside the handler ---
+    dynamodb_resource = boto3.resource('dynamodb')
+    dynamodb_client = boto3.client('dynamodb')
+    savings_table = dynamodb_resource.Table(SAVINGS_TABLE_NAME) if SAVINGS_TABLE_NAME else None
+    wallets_table = dynamodb_resource.Table(WALLETS_TABLE_NAME) if WALLETS_TABLE_NAME else None
+    log_table = dynamodb_resource.Table(LOG_TABLE_NAME) if LOG_TABLE_NAME else None
     
     # --- CORS Preflight Check ---
     http_method = event.get('httpMethod', '').upper()
     if http_method == 'OPTIONS':
-        print("Handling OPTIONS request for redeem_savings_goal")
+        logger.info("Handling OPTIONS preflight request for redeem_savings_goal")
         return { "statusCode": 200, "headers": OPTIONS_CORS_HEADERS, "body": "" }
-    # --- End CORS Preflight Check ---
 
     if not savings_table or not wallets_table or not log_table:
-        print("FATAL: Environment variables not configured.")
+        log_message = {
+            "status": "error",
+            "action": "redeem_savings_goal",
+            "message": "FATAL: Environment variables not configured."
+        }
+        logger.error(json.dumps(log_message))
         return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error."}) }
 
     if http_method == 'POST':
+        goal_id = "unknown"
+        log_context = {"action": "redeem_savings_goal"}
         try:
             goal_id = unquote(event['pathParameters']['goal_id']).strip()
-            print(f"Attempting to redeem goal: {goal_id}")
+            log_context["goal_id"] = goal_id
+            
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Attempting to redeem goal."}))
 
             # 1. Get the goal to verify it's complete
             response = savings_table.get_item(Key={'goal_id': goal_id})
             goal_item = response.get('Item')
 
             if not goal_item:
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Savings goal not found."}))
                 return { "statusCode": 404, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Savings goal not found."}) }
 
             current_amount = goal_item.get('current_amount', Decimal('0'))
@@ -99,16 +128,23 @@ def redeem_savings_goal(event, context):
             wallet_id = goal_item.get('wallet_id')
             goal_name = goal_item.get('goal_name', 'Redeemed Goal')
 
+            log_context.update({
+                "wallet_id": wallet_id,
+                "current_amount": str(current_amount),
+                "target_amount": str(target_amount)
+            })
+
             # 2. Check if goal is actually complete
             if current_amount < target_amount:
-                print("Goal not yet complete. Cannot redeem.")
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Goal not yet complete. Cannot redeem."}))
                 return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Goal is not yet complete. Cannot redeem."}) }
             
             if not wallet_id:
+                 logger.error(json.dumps({**log_context, "status": "error", "message": "Goal item is corrupt, missing wallet_id."}))
                  return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Goal item is corrupt, missing wallet_id."}) }
 
             # 3. Perform atomic transaction
-            print(f"Goal is complete. Refunding {current_amount} to wallet {wallet_id}.")
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Goal is complete. Refunding to wallet."}))
             dynamodb_client.transact_write_items(
                 TransactItems=[
                     { # Operation 1: Credit the wallet
@@ -132,16 +168,14 @@ def redeem_savings_goal(event, context):
             # 4. Get new wallet balance for logging
             new_wallet_balance = 'N/A'
             try:
-                wallet_response = wallets_table.get_item(
-                    Key={'wallet_id': wallet_id},
-                    ConsistentRead=True # Force strongly consistent read
-                )
+                wallet_response = wallets_table.get_item(Key={'wallet_id': wallet_id}, ConsistentRead=True)
                 new_wallet_balance = wallet_response.get('Item', {}).get('balance', 'N/A')
             except Exception as log_get_e:
-                print(f"Could not fetch new balance for logging: {log_get_e}")
+                logger.error(json.dumps({**log_context, "status": "error", "message": f"Could not fetch new balance for logging: {str(log_get_e)}"}))
 
             # 5. Log the redemption
             log_transaction(
+                log_table=log_table,
                 wallet_id=wallet_id,
                 tx_type="SAVINGS_REDEEM",
                 amount=current_amount,
@@ -157,11 +191,15 @@ def redeem_savings_goal(event, context):
             }
 
         except ClientError as e:
-            print(f"DynamoDB ClientError during redemption: {e}")
-            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Error processing redemption."}) }
+            log_context["error_code"] = e.response['Error']['Code']
+            if e.response['Error']['Code'] == 'TransactionCanceledException':
+                 logger.error(json.dumps({**log_context, "status": "error", "message": f"Transaction failed: {e.response['CancellationReasons']}"}))
+                 return { "statusCode": 400, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Transaction failed. Could not refund to wallet.", "error": str(e)}) }
+            
+            logger.error(json.dumps({**log_context, "status": "error", "error_message": str(e)}))
+            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Database error.", "error": str(e)}) }
         except Exception as e:
-            print(f"Unexpected error during redemption: {e}")
-            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Unexpected error occurred."}) }
+            logger.error(json.dumps({**log_context, "status": "error", "error_message": str(e)}))
+            return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "An unexpected error occurred.", "error": str(e)}) }
     else:
-        print(f"Unsupported HTTP method: {http_method}")
-        return { "statusCode": 405, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Method not allowed."}) }
+        return { "statusCode": 405, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": f"Method {http_method} not allowed."}) }

@@ -1,4 +1,10 @@
 import json
+import logging
+
+# --- 1. Set up logger ---
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+# ---
 
 def auto_confirm_user(event, context):
     """
@@ -7,7 +13,15 @@ def auto_confirm_user(event, context):
     to skip the email verification code step for the demo.
     """
     
-    print(f"Received pre-sign-up event: {json.dumps(event)}")
+    # --- 2. Log using structured JSON ---
+    log_context = {
+        "status": "info",
+        "action": "auto_confirm_user",
+        "user_email": event.get('userName'),
+        "user_attributes": event.get('request', {}).get('userAttributes', {})
+    }
+    logger.info(json.dumps({**log_context, "message": "Auto-confirming user and verifying email for demo."}))
+    # ---
     
     # Tell Cognito to auto-confirm the user
     event['response']['autoConfirmUser'] = True

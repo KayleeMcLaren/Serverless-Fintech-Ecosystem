@@ -5,7 +5,7 @@ import ConfirmModal from './ConfirmModal';
 import { WrenchScrewdriverIcon } from '@heroicons/react/24/outline';
 
 function AdminTools() {
-  const { apiUrl } = useWallet();
+  const { apiUrl, authorizedFetch } = useWallet();
   const [loading, setLoading] = useState(null); // 'loan-action', 'kyc-action'
   
   // State for Loan Admin
@@ -22,8 +22,8 @@ function AdminTools() {
   const handleLoanAction = async (loanId, action) => {
     setLoading('loan-action');
     await toast.promise(
-      fetch(`${apiUrl}/loan/${encodeURIComponent(loanId)}/${action}`, { method: 'POST' })
-        .then(async (response) => {
+    authorizedFetch(`${apiUrl}/loan/${encodeURIComponent(loanId)}/${action}`, { method: 'POST' })
+    .then(async (response) => {
           const responseBody = await response.json();
           if (!response.ok) throw new Error(responseBody?.message || `HTTP error!`);
           return responseBody;
@@ -55,7 +55,7 @@ function AdminTools() {
   const handleKycAction = async (userId, decision) => {
     setLoading('kyc-action');
     await toast.promise(
-      fetch(`${apiUrl}/onboarding/manual-review`, {
+      authorizedFetch(`${apiUrl}/onboarding/manual-review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, decision: decision }),

@@ -6,16 +6,16 @@ import { ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 import WalletPrompt from './WalletPrompt';
 
 function PaymentSimulator() {
-  // --- 1. Get auth and wallet state ---
+  // 1. Get auth and wallet state
   const { wallet, apiUrl, refreshWalletAndHistory, authorizedFetch } = useWallet();
   const walletId = wallet ? wallet.wallet_id : null;
 
-  // --- 2. State for this component ---
+  // 2. State for this component
   const [transactions, setTransactions] = useState([]);
   const [loadingList, setLoadingList] = useState(false); // For the list
-  const [loadingAction, setLoadingAction] = useState(false); // For the form button
-  const [merchant, setMerchant] = useState('DemoMerchant');
-  const [amount, setAmount] = useState('50.00');
+  const [loadingAction, setLoadingAction] = useState(false); // For form buttons
+  const [merchant, setMerchant] = useState('');
+  const [amount, setAmount] = useState('');
   
   // State for manual status check
   const [txIdToCheck, setTxIdToCheck] = useState('');
@@ -23,10 +23,14 @@ function PaymentSimulator() {
 
   // Ref to hold all active polling intervals
   const pollingIntervals = useRef(new Map());
+  
+  // 3. Add new state for toggling history
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  // --- 3. API-calling functions ---
+  // --- 4. API-calling functions (wrapped in useCallback) ---
+  
   const fetchTransactions = useCallback(async () => {
-    if (!walletId || !authorizedFetch) return;
+    if (!walletId || !authorizedFetch) return; // Wait for auth
     setLoadingList(true);
     try {
       const response = await authorizedFetch(`${apiUrl}/payment/by-wallet/${encodeURIComponent(walletId)}`);
@@ -35,6 +39,8 @@ function PaymentSimulator() {
         throw new Error(errData.message || 'Failed to fetch transactions');
       }
       const data = await response.json();
+      // Sort by creation time, newest first
+      data.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
       setTransactions(Array.isArray(data) ? data : []);
     } catch (err) {
       toast.error(err.message);
@@ -42,8 +48,9 @@ function PaymentSimulator() {
     } finally {
       setLoadingList(false);
     }
-  }, [walletId, apiUrl, authorizedFetch]);
+  }, [walletId, apiUrl, authorizedFetch]); // Add authFetch
 
+  // useEffect to fetch transactions on load
   useEffect(() => {
     fetchTransactions();
     // Clear all polling intervals when component unmounts or wallet changes
@@ -52,7 +59,68 @@ function PaymentSimulator() {
       pollingIntervals.current.clear();
     };
   }, [fetchTransactions]);
+  
+  // Helper function to check status (used by poller and manual check)
+  const checkPaymentStatus = useCallback(async (txId) => {
+    try {
+      const response = await authorizedFetch(`${apiUrl}/payment/${encodeURIComponent(txId)}`);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Status check failed');
+      }
+      return data.status;
+    } catch (err) {
+      console.error(`Poll error: ${err.message}`);
+      throw err; // Re-throw to be caught by handlers
+    }
+  }, [apiUrl, authorizedFetch]); // Add dependencies
 
+  // Helper function to stop polling a specific TX
+  const stopPolling = (txId) => {
+    if (pollingIntervals.current.has(txId)) {
+      clearInterval(pollingIntervals.current.get(txId));
+      pollingIntervals.current.delete(txId);
+      console.log(`Polling stopped for ${txId}.`);
+    }
+  };
+
+  // Helper function to start polling a specific TX
+  const pollForStatus = useCallback((txId) => {
+    if (pollingIntervals.current.has(txId)) return; // Already polling
+
+    console.log(`Starting polling for transaction: ${txId}`);
+    const intervalId = setInterval(async () => {
+      console.log(`Polling status for ${txId}...`);
+      try {
+        const status = await checkPaymentStatus(txId);
+
+        // Update the transaction in our list
+        setTransactions(prev => 
+          prev.map(tx => tx.transaction_id === txId ? { ...tx, status: status, updated_at: Math.floor(Date.now() / 1000) } : tx)
+        );
+
+        if (status !== 'PENDING') {
+          console.log(`Transaction ${txId} completed with status: ${status}. Stopping polling.`);
+          stopPolling(txId);
+          toast.success(`Payment ${txId.substring(0, 8)}... ${status.toLowerCase()}!`);
+          
+          if (status === 'SUCCESSFUL' && refreshWalletAndHistory) {
+              refreshWalletAndHistory();
+          }
+        }
+      } catch (error) {
+        console.error(`Error during polling for ${txId}:`, error);
+        stopPolling(txId);
+        toast.error(`Error polling for ${txId}: ${error.message}`);
+      }
+    }, 5000); // Poll every 5 seconds
+
+    pollingIntervals.current.set(txId, intervalId);
+  }, [checkPaymentStatus, refreshWalletAndHistory]); // Add dependencies
+
+
+  // --- 5. Event Handlers ---
+  
   // Handler for the "Submit Payment" button
   const handleRequestPayment = async (e) => {
     e.preventDefault();
@@ -79,8 +147,9 @@ function PaymentSimulator() {
       }
       
       toast.success(data.message);
+      // Add the new transaction to the top of the list
       setTransactions(prev => [data.transaction, ...prev]);
-      pollForStatus(data.transaction_id); // Start polling for this new transaction
+      pollForStatus(data.transaction_id); // Start polling
       
       // Refresh wallet after a delay (to allow debit)
       setTimeout(refreshWalletAndHistory, 4000);
@@ -100,6 +169,10 @@ function PaymentSimulator() {
     try {
       const status = await checkPaymentStatus(txIdToCheck);
       setCheckedTxStatus({ id: txIdToCheck, status: status });
+      // Manually update the list
+      setTransactions(prev => 
+          prev.map(tx => tx.transaction_id === txIdToCheck ? { ...tx, status: status } : tx)
+      );
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -107,66 +180,7 @@ function PaymentSimulator() {
     }
   };
 
-  // --- 4. Polling functions (using authorizedFetch) ---
-  
-  const checkPaymentStatus = async (txId) => {
-    try {
-      const response = await authorizedFetch(`${apiUrl}/payment/${encodeURIComponent(txId)}`);
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Status check failed');
-      }
-      return data.status;
-    } catch (err) {
-      console.error(`Poll error: ${err.message}`);
-      throw err; // Re-throw to be caught by handlers
-    }
-  };
-  
-  const pollForStatus = (txId) => {
-    // If we are already polling this tx, don't start another
-    if (pollingIntervals.current.has(txId)) return;
-
-    console.log(`Starting polling for transaction: ${txId}`);
-    const intervalId = setInterval(async () => {
-      console.log(`Polling status for ${txId}...`);
-      try {
-        const status = await checkPaymentStatus(txId);
-
-        // Update the transaction in our list
-        setTransactions(prev => 
-          prev.map(tx => tx.transaction_id === txId ? { ...tx, status: status } : tx)
-        );
-
-        if (status !== 'PENDING') {
-          console.log(`Transaction ${txId} completed with status: ${status}. Stopping polling.`);
-          stopPolling(txId);
-          toast.success(`Payment ${txId.substring(0, 8)}... ${status.toLowerCase()}!`);
-          
-          if (status === 'SUCCESSFUL' && refreshWalletAndHistory) {
-              refreshWalletAndHistory();
-          }
-        }
-      } catch (error) {
-        console.error(`Error during polling for ${txId}:`, error);
-        stopPolling(txId);
-        toast.error(`Error polling for ${txId}: ${error.message}`);
-      }
-    }, 5000); // Poll every 5 seconds
-
-    pollingIntervals.current.set(txId, intervalId);
-  };
-
-  const stopPolling = (txId) => {
-    if (pollingIntervals.current.has(txId)) {
-      clearInterval(pollingIntervals.current.get(txId));
-      pollingIntervals.current.delete(txId);
-      console.log(`Polling stopped for ${txId}.`);
-    }
-  };
-  // ---
-
-  // --- 5. Render Logic ---
+  // --- 6. Render Logic ---
   if (!walletId) {
       return <WalletPrompt />;
   }
@@ -246,43 +260,52 @@ function PaymentSimulator() {
 
       {/* Display Recent Transactions */}
       <div>
-        <h4 className="text-md font-semibold text-neutral-700 mb-3">Recent Transactions</h4>
-        {loadingList && <Spinner />}
+        <button
+          onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+          className="text-xs font-semibold text-primary-blue hover:text-primary-blue-dark"
+        >
+          {isHistoryOpen ? 'Hide Payment History' : 'Show Payment History'}
+        </button>
 
-        {!loadingList && transactions.length === 0 && (
-          <div className="text-center text-neutral-500 my-4 py-6">
-            <ClipboardDocumentListIcon className="h-10 w-10 mx-auto text-neutral-400" />
-            <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Payment History</h3>
-            <p className="mt-1 text-sm text-neutral-500">Make a payment using the form above to see it here.</p>
-          </div>
-        )}
-
-        {!loadingList && transactions.length > 0 && (
-          <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-            {transactions.map((tx) => (
-              <div key={tx.transaction_id} className="p-3 bg-white border border-neutral-200 rounded-md shadow-sm text-sm">
-                <div className="flex justify-between items-center mb-1">
-                  <span className={`font-medium px-2 py-0.5 rounded text-xs ${
-                    tx.status === 'SUCCESSFUL' ? 'bg-accent-green-light text-accent-green-dark' :
-                    tx.status === 'FAILED' ? 'bg-accent-red-light text-accent-red-dark' :
-                    'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {tx.status}
-                  </span>
-                  <span className="text-neutral-600 font-semibold">{formatCurrency(tx.amount)}</span>
-                </div>
-                <p className="text-xs text-neutral-500">To: {tx.merchant_id}</p>
-                <p className="text-xs text-neutral-400 mt-1 truncate">ID: {tx.transaction_id}</p>
-                {tx.updated_at && (
-                  <p className="text-xs text-neutral-400">Updated: {new Date(tx.updated_at * 1000).toLocaleString()}</p>
-                )}
-                {/* Show polling indicator */}
-                {pollingIntervals.current.has(tx.transaction_id) && tx.status === 'PENDING' && (
-                  <p className="text-xs text-blue-500 animate-pulse">Checking status...</p>
-                )}
+        {isHistoryOpen && (
+          <>
+            {loadingList && <Spinner />}
+            {!loadingList && transactions.length === 0 && (
+              <div className="text-center text-neutral-500 my-4 py-6">
+                <ClipboardDocumentListIcon className="h-10 w-10 mx-auto text-neutral-400" />
+                <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Payment History</h3>
+                <p className="mt-1 text-sm text-neutral-500">Make a payment using the form above to see it here.</p>
               </div>
-            ))}
-          </div>
+            )}
+
+            {!loadingList && transactions.length > 0 && (
+              <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                {transactions.map((tx) => (
+                  <div key={tx.transaction_id} className="p-3 bg-white border border-neutral-200 rounded-md shadow-sm text-sm">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className={`font-medium px-2 py-0.5 rounded text-xs ${
+                        tx.status === 'SUCCESSFUL' ? 'bg-accent-green-light text-accent-green-dark' :
+                        tx.status === 'FAILED' ? 'bg-accent-red-light text-accent-red-dark' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {tx.status}
+                      </span>
+                      <span className="text-neutral-600 font-semibold">{formatCurrency(tx.amount)}</span>
+                    </div>
+                    <p className="text-xs text-neutral-500">To: {tx.merchant_id}</p>
+                    <p className="text-xs text-neutral-400 mt-1 truncate">ID: {tx.transaction_id}</p>
+                    {tx.updated_at && (
+                      <p className="text-xs text-neutral-400">Updated: {new Date(tx.updated_at * 1000).toLocaleString()}</p>
+                    )}
+                    {/* Show polling indicator */}
+                    {pollingIntervals.current.has(tx.transaction_id) && tx.status === 'PENDING' && (
+                      <p className="text-xs text-blue-500 animate-pulse">Checking status...</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

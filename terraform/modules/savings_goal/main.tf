@@ -108,6 +108,7 @@ resource "aws_lambda_function" "create_savings_goal_lambda" {
   source_code_hash = data.archive_file.create_savings_goal_zip.output_base64sha256
   handler          = "handler.create_savings_goal"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -131,6 +132,7 @@ resource "aws_lambda_function" "get_savings_goals_lambda" {
   source_code_hash = data.archive_file.get_savings_goals_zip.output_base64sha256
   handler          = "handler.get_savings_goals"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -154,6 +156,7 @@ resource "aws_lambda_function" "delete_savings_goal_lambda" {
   source_code_hash = data.archive_file.delete_savings_goal_zip.output_base64sha256
   handler          = "handler.delete_savings_goal"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -180,6 +183,7 @@ resource "aws_lambda_function" "add_to_savings_goal_lambda" {
   source_code_hash = data.archive_file.add_to_savings_goal_zip.output_base64sha256
   handler          = "handler.add_to_savings_goal"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -205,6 +209,7 @@ resource "aws_lambda_function" "get_goal_transactions_lambda" {
   source_code_hash = data.archive_file.get_goal_transactions_zip.output_base64sha256
   handler          = "handler.get_goal_transactions"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {
@@ -228,6 +233,7 @@ resource "aws_lambda_function" "redeem_savings_goal_lambda" {
   source_code_hash = data.archive_file.redeem_savings_goal_zip.output_base64sha256
   handler          = "handler.redeem_savings_goal"
   runtime          = "python3.12"
+  timeout          = 10
   tags             = var.tags
   environment {
     variables = {

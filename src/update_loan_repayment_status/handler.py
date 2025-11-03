@@ -3,62 +3,75 @@ import os
 import boto3
 from decimal import Decimal, InvalidOperation
 from botocore.exceptions import ClientError
+import logging # <-- 1. Import logging
 
-# --- Table Name ---
+# --- 2. Set up logger ---
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+# ---
+
+# --- Environment Variables ---
 LOANS_TABLE_NAME = os.environ.get('LOANS_TABLE_NAME')
-
-# --- DynamoDB Resources ---
-dynamodb = boto3.resource('dynamodb')
-
-if not LOANS_TABLE_NAME:
-    print("ERROR: LOANS_TABLE_NAME environment variable not set.")
-    loans_table = None
-else:
-    loans_table = dynamodb.Table(LOANS_TABLE_NAME)
-
+# (This Lambda doesn't log to the transactions table, so it doesn't need LOG_TABLE_NAME)
 
 def update_loan_repayment_status(event, context):
     """
-    Subscribes to 'LOAN_REPAYMENT_SUCCESSFUL' or 'FAILED'
+    SNS Subscriber for 'LOAN_REPAYMENT_SUCCESSFUL' / 'FAILED'
     Updates the loan's remaining_balance in the loans_table.
     """
-    print(f"Received event: {json.dumps(event)}")
+    
+    # --- 3. Initialize boto3 inside the handler ---
+    dynamodb = boto3.resource('dynamodb')
+    loans_table = dynamodb.Table(LOANS_TABLE_NAME) if LOANS_TABLE_NAME else None
+    # ---
     
     if not loans_table:
-        print("FATAL: loans_table is not configured. Aborting.")
-        # Raise error to force SNS retry if the env var is missing
-        raise Exception("Server configuration error: LOANS_TABLE_NAME not set.")
+        log_message = {
+            "status": "error",
+            "action": "update_loan_repayment_status",
+            "message": "FATAL: LOANS_TABLE_NAME environment variable not set."
+        }
+        logger.error(json.dumps(log_message))
+        raise Exception("Server configuration error.")
+
+    logger.info(f"Received event: {json.dumps(event)}")
 
     for record in event['Records']:
         message_id = record.get('Sns', {}).get('MessageId', 'Unknown')
+        log_context = {"action": "update_loan_repayment_status", "sns_message_id": message_id}
+        
         try:
             sns_message_str = record.get('Sns', {}).get('Message')
             if not sns_message_str:
-                print(f"Skipping record {message_id}: Missing SNS message body.")
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Skipping record: Missing SNS message body."}))
                 continue
 
             sns_message = json.loads(sns_message_str)
             event_type = sns_message.get('event_type')
             event_details = sns_message.get('details', {})
             
+            log_context["event_type"] = event_type
+            
             loan_id = event_details.get('loan_id')
             wallet_id = event_details.get('wallet_id')
             amount_str = event_details.get('amount')
             
+            log_context.update({"loan_id": loan_id, "wallet_id": wallet_id})
+
             if not loan_id or not wallet_id or not amount_str:
-                print(f"Skipping record {message_id}: Invalid details {event_details}")
+                logger.error(json.dumps({**log_context, "status": "error", "message": "Invalid event details."}))
                 continue
 
             amount = Decimal(amount_str)
+            log_context["amount"] = str(amount)
 
             if event_type == 'LOAN_REPAYMENT_SUCCESSFUL':
-                print(f"Processing successful repayment for loan {loan_id}, amount {amount}")
+                logger.info(json.dumps({**log_context, "status": "info", "message": "Processing successful repayment."}))
                 
                 # Decrease the remaining_balance on the loan
                 response = loans_table.update_item(
                     Key={'loan_id': loan_id},
                     UpdateExpression="SET remaining_balance = remaining_balance - :amount",
-                    # Ensure the loan is still approved and not already paid off
                     ConditionExpression="attribute_exists(loan_id) AND #status = :status_approved",
                     ExpressionAttributeNames={'#status': 'status'},
                     ExpressionAttributeValues={ 
@@ -69,39 +82,39 @@ def update_loan_repayment_status(event, context):
                 )
                 
                 new_remaining_balance = response.get('Attributes', {}).get('remaining_balance')
-                print(f"Loan {loan_id} new remaining balance: {new_remaining_balance}")
+                log_context["new_remaining_balance"] = str(new_remaining_balance)
+                logger.info(json.dumps({**log_context, "status": "info", "message": "Loan balance updated."}))
                 
                 # If loan is paid off, update status to 'PAID'
                 if new_remaining_balance is not None and new_remaining_balance <= 0:
-                    print(f"Loan {loan_id} has been fully paid off. Setting status to PAID.")
+                    logger.info(json.dumps({**log_context, "status": "info", "message": "Loan fully paid off. Setting status to PAID."}))
                     loans_table.update_item(
                          Key={'loan_id': loan_id},
                          UpdateExpression="SET #status = :status_paid",
                          ExpressionAttributeNames={'#status': 'status'},
                          ExpressionAttributeValues={':status_paid': 'PAID'}
                     )
-                    print(f"Set loan {loan_id} status to PAID.")
+                    logger.info(json.dumps({**log_context, "status": "info", "message": "Loan status set to PAID."}))
 
             elif event_type == 'LOAN_REPAYMENT_FAILED':
                 reason = sns_message.get('reason', 'Unknown')
-                print(f"Processing FAILED repayment for loan {loan_id}. Reason: {reason}. No action taken on loan balance.")
-                # No action needed on the loan balance, just log.
+                log_context["reason"] = reason
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Processing FAILED repayment. No action taken."}))
             
             else:
-                print(f"Skipping event type: {event_type}")
+                logger.warning(json.dumps({**log_context, "status": "warn", "message": "Skipping unhandled event type."}))
 
         except (ValueError, InvalidOperation, TypeError) as val_err:
-             print(f"ERROR processing record {message_id} due to invalid data: {val_err}")
-             # Don't re-raise, move to next record
+             logger.error(json.dumps({**log_context, "status": "error", "message": f"Invalid data error: {str(val_err)}"}))
         except ClientError as ce:
-             # Handle conditional check failure (e.g., loan not 'APPROVED')
+             log_context["error_code"] = ce.response['Error']['Code']
              if ce.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                 print(f"Skipping repayment for {loan_id}: Condition failed (likely not in APPROVED state).")
+                 logger.warning(json.dumps({**log_context, "status": "warn", "message": "Condition failed (loan likely not in APPROVED state)."}))
              else:
-                 print(f"ERROR: DynamoDB error processing record {message_id}: {ce}")
-                 raise ce # Force SNS to retry the batch
+                 logger.error(json.dumps({**log_context, "status": "error", "message": f"DynamoDB error: {str(ce)}"}))
+                 raise ce # Force SNS to retry
         except Exception as e:
-            print(f"ERROR: Unexpected error processing record {message_id}: {e}")
-            raise e # Force SNS to retry the batch
+            logger.error(json.dumps({**log_context, "status": "error", "message": f"Unexpected error: {str(e)}"}))
+            raise e # Force SNS to retry
 
     return {"statusCode": 200, "body": "Events processed."}

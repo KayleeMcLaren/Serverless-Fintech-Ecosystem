@@ -1,37 +1,30 @@
-import React, { useState, useEffect, useCallback } from 'react'; // 1. Import useCallback
+import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import Spinner from './Spinner';
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
-} from 'recharts';
 import { useWallet, formatCurrency } from './contexts/WalletContext';
-import { BanknotesIcon } from '@heroicons/react/24/outline';
+import { BanknotesIcon, ClockIcon, TrophyIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
 import WalletPrompt from './WalletPrompt';
 
-// --- (CustomTooltip helper - no changes) ---
-const CustomTooltip = ({ active, payload, label }) => { /* ... */ };
-
 function DebtOptimiser() {
-  // --- 2. Get authorizedFetch from context ---
   const { wallet, apiUrl, authorizedFetch } = useWallet();
   const walletId = wallet ? wallet.wallet_id : null;
 
   const [budget, setBudget] = useState('');
-  const [results, setResults] = useState(null);
+  // Results now holds the two projections (min and accel) and saved metrics
+  const [results, setResults] = useState(null); 
   const [loading, setLoading] = useState(false);
   const [loansLoading, setLoansLoading] = useState(false);
-  const [chartData, setChartData] = useState([]);
   const [noLoansFound, setNoLoansFound] = useState(false);
   const [totalMinimumPayment, setTotalMinimumPayment] = useState(0);
   const [loans, setLoans] = useState([]);
 
-  // --- 3. Corrected fetchApprovedLoans function ---
+
   const fetchApprovedLoans = useCallback(async () => {
-    if (!walletId || !authorizedFetch) return; // Wait for auth
+    if (!walletId || !authorizedFetch) return; 
     setLoansLoading(true);
     setNoLoansFound(false);
-    setResults(null); // Clear old results when refetching
-    setBudget('');    // Clear old budget
+    setResults(null); 
+    setBudget('');    
     try {
       const response = await authorizedFetch(`${apiUrl}/loan/by-wallet/${encodeURIComponent(walletId)}`);
       if (!response.ok) {
@@ -52,16 +45,14 @@ function DebtOptimiser() {
     } finally {
       setLoansLoading(false);
     }
-  }, [walletId, apiUrl, authorizedFetch]); // Add authFetch
+  }, [walletId, apiUrl, authorizedFetch]);
 
-  // --- 4. Single useEffect to call fetchLoans ---
   useEffect(() => {
     if (walletId && authorizedFetch) {
         fetchApprovedLoans();
     }
-  }, [fetchApprovedLoans, walletId, authorizedFetch]); // Correct dependencies
+  }, [fetchApprovedLoans, walletId, authorizedFetch]);
 
-  // --- (useEffect for total min payment - no changes) ---
   useEffect(() => {
     if (loans.length > 0) {
       const totalMin = loans.reduce((acc, loan) => {
@@ -73,16 +64,9 @@ function DebtOptimiser() {
     }
   }, [loans]);
   
-  // --- (useEffect for chart data - no changes) ---
-  useEffect(() => {
-    if (results) {
-      // ... (chart data logic)
-    } else {
-      setChartData([]);
-    }
-  }, [results]);
+  // No chartData useEffect needed now, as the line chart is gone.
 
-  // --- 5. Update handleCalculate to use authorizedFetch ---
+  // --- Calculate Handler (Uses simplified backend logic) ---
   const handleCalculate = async (e) => {
     e.preventDefault();
     const extra = parseFloat(budget || '0');
@@ -95,11 +79,9 @@ function DebtOptimiser() {
     
     setLoading(true);
     setResults(null);
-
-    const calculationToastId = toast.loading('Calculating plans...');
+    const calculationToastId = toast.loading('Calculating payoff projections...');
 
     try {
-      // --- USE authorizedFetch ---
       const response = await authorizedFetch(`${apiUrl}/debt-optimiser`, {
         method: 'POST',
         body: JSON.stringify({
@@ -120,7 +102,7 @@ function DebtOptimiser() {
         }
       } else {
         setResults(responseBody);
-        toast.success(<b>Calculation complete!</b>, { id: calculationToastId });
+        toast.success(<b>Projections calculated!</b>, { id: calculationToastId });
       }
     } catch (error) {
       console.error("Calculation failed:", error);
@@ -130,84 +112,23 @@ function DebtOptimiser() {
     }
   };
 
-  // --- UPDATED Recommendation Helper ---
-  const getRecommendation = () => {
-    if (!results) return null;
-
-    const { avalanche_plan, snowball_plan, summary } = results;
-    if (summary.extra_payment <= 0) {
-        return (
-             <div className="mt-6 text-center p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <p className="font-semibold text-blue-800">
-                    You are paying the minimums. Add an extra payment to see how these plans differ!
-                </p>
-            </div>
-        );
-    }
-    
-    // Choose the winner
-    const avalanche_is_better = parseFloat(avalanche_plan.total_interest_paid) < parseFloat(snowball_plan.total_interest_paid);
-    const winner = avalanche_is_better ? avalanche_plan : snowball_plan;
-    const winner_name = avalanche_is_better ? "Avalanche" : "Snowball";
-    const target = winner.first_target;
-    
-    if (!target) {
-        return <p className="text-accent-red-dark">Could not determine target loan.</p>;
-    }
-    
-    const target_desc = winner_name === 'Avalanche'
-      ? `(your highest interest loan at ${target.interest_rate}%)`
-      : `(your lowest balance loan at ${formatCurrency(target.remaining_balance)})`;
-
-    return (
-      <div className="mt-6 text-left p-4 bg-accent-green-light border border-accent-green/50 rounded-md">
-        <h4 className="font-semibold text-accent-green-dark mb-2">Your Recommended Plan: {winner_name}</h4>
-        <p className="text-sm text-neutral-700">
-          Pay the minimum on all loans, then pay your extra <b className="text-accent-green-dark">{formatCurrency(summary.extra_payment)}</b> towards:
-        </p>
-        <p className="text-sm font-semibold text-neutral-800 mt-1 pl-2">
-          {target.name} {target_desc}
-        </p>
-
-        {/* --- NEW: Payoff Timeline --- */}
-        {winner.payoff_log && winner.payoff_log.length > 0 && (
-          <div className="mt-4 pt-3 border-t border-accent-green/50">
-            <h5 className="font-semibold text-neutral-700 text-sm mb-2">Payoff Timeline:</h5>
-            <ul className="list-disc list-inside space-y-1 text-sm text-neutral-600">
-              {winner.payoff_log.map((logEntry, index) => (
-                <li key={index}>{logEntry}</li>
-              ))}
-              <li key="final">Month {winner.months_to_payoff}: All loans paid off!</li>
-            </ul>
-          </div>
-        )}
-        {/* --- END: Payoff Timeline --- */}
-        
-      </div>
-    );
-  };
-  // --- END HELPER ---
 
   // --- Render Logic ---
   if (!walletId) { 
     return <WalletPrompt />;
   }
-
-  // Show a loading spinner if still fetching the loans
   if (loansLoading) {
     return (
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mt-8 shadow-sm">
-            <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Debt Repayment Optimiser</h2>
+            <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Debt Repayment Projection</h2>
             <Spinner />
         </div>
     );
   }
-
-  // Show the "No Approved Loans" empty state
   if (noLoansFound) {
       return (
           <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mt-8 shadow-sm">
-              <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Debt Repayment Optimiser</h2>
+              <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Debt Repayment Projection</h2>
               <div className="text-center text-neutral-500 my-4 py-8">
                   <BanknotesIcon className="h-12 w-12 mx-auto text-neutral-400" />
                   <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Approved Loans Found</h3>
@@ -218,12 +139,15 @@ function DebtOptimiser() {
       );
   }
 
-  // --- Main Component Render (if loans exist) ---
   return (
     <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mt-8 shadow-sm">
-      <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Debt Repayment Optimiser</h2>
+      <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Debt Repayment Projection</h2>
+      
+      <p className="text-sm text-neutral-600 mb-6 text-center max-w-xl mx-auto">
+        This tool compares your minimum payment timeline against an <b>accelerated payoff</b> plan using your extra monthly budget.
+      </p>
 
-      {/* --- Input Form --- */}
+      {/* --- Input Form (no changes) --- */}
       <form onSubmit={handleCalculate} className="mb-6 pb-4 border-b border-neutral-200">
         
         <div className="p-3 bg-white border border-neutral-200 rounded-md shadow-sm text-center mb-4">
@@ -247,7 +171,7 @@ function DebtOptimiser() {
             disabled={loading}
             className="px-4 py-2 w-32 bg-teal-500 text-white rounded-md hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:bg-teal-300 flex-shrink-0"
           >
-            {loading ? <Spinner mini={true} /> : 'Calculate Plans'}
+            {loading ? <Spinner mini={true} /> : 'Calculate Plan'}
           </button>
         </div>
       </form>
@@ -257,51 +181,72 @@ function DebtOptimiser() {
       {/* --- Display Results --- */}
       {results && !loading && (
         <div className="mt-6">
-           <h3 className="text-lg font-semibold text-neutral-800 mb-4 text-center">Comparison Results</h3>
-            {/* Summary Section */}
-            <div className="mb-6 p-4 bg-white border border-neutral-200 rounded-md shadow-sm text-sm">
-                <h4 className="font-medium text-neutral-700 mb-2">Summary</h4>
-                <p className="text-neutral-600">Total Approved Loans: <span className="font-semibold text-neutral-800">{results.summary.total_loans}</span></p>
-                <p className="text-neutral-600">Total Minimum Payment: <span className="font-semibold text-neutral-800">{formatCurrency(results.summary.total_minimum_payment)}</span></p>
-                <p className="text-neutral-600">Your Total Monthly Payment: <span className="font-semibold text-neutral-800">{formatCurrency(results.summary.monthly_budget)}</span></p>
-                <p className="text-neutral-600">Extra Payment Applied: <span className="font-semibold text-accent-green-dark">{formatCurrency(results.summary.extra_payment)}</span></p>
-            </div>
+           <h3 className="text-lg font-semibold text-neutral-800 mb-4 text-center">Payoff Comparison</h3>
             
-             {/* --- Charts --- */}
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Chart 1: Payoff Time */}
-                <div className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
-                    <h4 className="font-medium text-neutral-700 mb-4 text-center">Payoff Time (Months)</h4>
-                    <ResponsiveContainer width="100%" height={200}>
-                      <BarChart data={chartData} margin={{ top: 5, right: 10, left: -25, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" />
-                        <XAxis dataKey="name" stroke="#4b5563" />
-                        <YAxis stroke="#4b5563" allowDecimals={false} tickFormatter={(value) => `${value} mo`} />
-                        <Tooltip content={<CustomTooltip />} />
-                        <Bar dataKey="Payoff Time (Months)" fill="#3b82f6" name="Time" />
-                      </BarChart>
-                    </ResponsiveContainer>
+            {/* Key Metrics Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                
+                {/* Card 1: Total Interest Saved */}
+                <div className="p-4 bg-white border border-neutral-200 rounded-lg shadow-sm text-center">
+                    <h3 className="text-sm font-medium text-neutral-500">Interest Saved</h3>
+                    <p className="mt-1 text-2xl font-bold text-accent-green-dark">
+                        {formatCurrency(results.interest_saved)}
+                    </p>
+                </div>
+                
+                {/* Card 2: Total Months Saved */}
+                <div className="p-4 bg-white border border-neutral-200 rounded-lg shadow-sm text-center">
+                    <h3 className="text-sm font-medium text-neutral-500">Time Saved</h3>
+                    <p className="mt-1 text-2xl font-bold text-accent-green-dark">
+                        {Math.max(0, results.months_saved)} Months
+                    </p>
+                </div>
+                
+                 {/* Card 3: Total Principal */}
+                <div className="p-4 bg-white border border-neutral-200 rounded-lg shadow-sm text-center">
+                    <h3 className="text-sm font-medium text-neutral-500">Total Principal</h3>
+                    <p className="mt-1 text-2xl font-bold text-primary-blue-dark">
+                        {formatCurrency(results.summary.total_balance)}
+                    </p>
+                </div>
+            </div>
+
+            {/* --- Comparison Table / Timeline --- */}
+            <div className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
+                <h4 className="font-semibold text-neutral-800 mb-4 text-center">Payoff Timeline</h4>
+                
+                <div className="grid grid-cols-3 gap-3 font-semibold text-neutral-700 border-b border-neutral-300 pb-2 mb-2">
+                    <span>Plan</span>
+                    <span className="text-center">Time (Months)</span>
+                    <span className="text-right">Total Interest</span>
+                </div>
+                
+                {/* Minimum Payment Plan */}
+                <div className="grid grid-cols-3 gap-3 py-2 border-b border-neutral-100">
+                    <span className="text-sm flex items-center text-neutral-600">
+                        <ClockIcon className="h-5 w-5 mr-2 text-neutral-500" /> Minimum Payment
+                    </span>
+                    <span className="text-center text-sm font-medium text-neutral-700">
+                        {results.projection_min.months} mo
+                    </span>
+                    <span className="text-right text-sm font-medium text-neutral-700">
+                        {formatCurrency(results.projection_min.interest_paid)}
+                    </span>
                 </div>
 
-                {/* Chart 2: Total Interest */}
-                <div className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
-                   <h4 className="font-medium text-neutral-700 mb-4 text-center">Total Interest Paid ($)</h4>
-                   <ResponsiveContainer width="100%" height={200}>
-                      <BarChart data={chartData} margin={{ top: 5, right: 10, left: -25, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" />
-                        <XAxis dataKey="name" stroke="#4b5563" />
-                        <YAxis stroke="#4b5563" allowDecimals={false} tickFormatter={(value) => `$${value}`} />
-                        <Tooltip content={<CustomTooltip />} />
-                        <Bar dataKey="Total Interest Paid" fill="#8b5cf6" name="Interest" />
-                      </BarChart>
-                    </ResponsiveContainer>
+                 {/* Accelerated Plan */}
+                <div className="grid grid-cols-3 gap-3 py-2 bg-accent-green-light/30 rounded-md">
+                    <span className="text-sm flex items-center font-semibold text-accent-green-dark">
+                        <ArrowRightIcon className="h-5 w-5 mr-2" /> Accelerated Plan
+                    </span>
+                    <span className="text-center text-sm font-semibold text-accent-green-dark">
+                        {results.projection_accel.months} mo
+                    </span>
+                    <span className="text-right text-sm font-semibold text-accent-green-dark">
+                        {formatCurrency(results.projection_accel.interest_paid)}
+                    </span>
                 </div>
-             </div>
-             {/* --- End Charts --- */}
-
-             {/* --- Recommendation --- */}
-             {getRecommendation()}
-             {/* --- End Recommendation --- */}
+            </div>
         </div>
       )}
     </div>

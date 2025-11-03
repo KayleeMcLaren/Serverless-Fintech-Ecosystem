@@ -7,7 +7,7 @@ import { useWallet, formatCurrency } from './contexts/WalletContext';
 import { CurrencyDollarIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import WalletPrompt from './WalletPrompt';
 
-// --- NEW: Combined helper function to get all display values ---
+// --- (Helper functions: calculateDisplayValues, etc. - remain the same) ---
 const calculateDisplayValues = (amountStr, termStr) => {
     const P = parseFloat(amountStr || '0');
     const term_months = parseInt(termStr, 10);
@@ -69,13 +69,17 @@ function MicroLoans() {
     const [displayMonthlyPayment, setDisplayMonthlyPayment] = useState(0);
     const [displayTotalRepayment, setDisplayTotalRepayment] = useState(0);
     const [repayAmount, setRepayAmount] = useState({});
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [modalAction, setModalAction] = useState(null);
-    const [selectedLoan, setSelectedLoan] = useState(null);
     const loanAmountSliderRef = useRef(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [activeFilter, setActiveFilter] = useState('');
     const [filteredLoans, setFilteredLoans] = useState([]);
+    const [isListOpen, setIsListOpen] = useState(false);
+
+    // --- THIS IS THE FIX ---
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalAction, setModalAction] = useState(null);
+    const [selectedLoan, setSelectedLoan] = useState(null);
+    // --- END FIX ---
     
     // --- Recalculate all display values on change ---
     useEffect(() => {
@@ -151,10 +155,11 @@ function MicroLoans() {
             return;
         }
         
-        setLoading(true);
+        setLoading(true); // Use main loading for apply form
         await toast.promise(
             authorizedFetch(`${apiUrl}/loan`, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     wallet_id: walletId,
                     amount: parseFloat(newLoanAmount).toFixed(2),
@@ -180,40 +185,6 @@ function MicroLoans() {
             }
         );
         setLoading(false);
-    };
-
-    // --- Approve/Reject Loan (used by Admin modal) ---
-    const handleLoanAction = async (loanId, action) => {
-        setActionLoading(prev => ({ ...prev, [loanId]: true }));
-
-        await toast.promise(
-            authorizedFetch(`${apiUrl}/loan/${encodeURIComponent(loanId)}/${action}`, {
-                method: 'POST',
-            })
-            .then(async (response) => {
-                const responseBody = await response.json();
-                if (!response.ok) {
-                    const apiErrorMsg = responseBody?.message || `HTTP error! Status: ${response.status}`;
-                    throw new Error(apiErrorMsg);
-                }
-                return responseBody;
-            })
-            .then(() => {
-                fetchLoans(); // Refresh the list
-                if (action === 'approve' && refreshWalletAndHistory) {
-                    // Give time for the event to process
-                    setTimeout(() => {
-                        refreshWalletAndHistory(); 
-                    }, 4000); 
-                }
-            }),
-            {
-                loading: `${action === 'approve' ? 'Approving' : 'Rejecting'} loan...`,
-                success: <b>Loan {action === 'approve' ? 'approved' : 'rejected'}!</b>,
-                error: (err) => <b>Failed to {action} loan: {err.message}</b>,
-            }
-        );
-        setActionLoading(prev => ({ ...prev, [loanId]: false }));
     };
 
     // --- Handle Repayment ---
@@ -264,18 +235,16 @@ function MicroLoans() {
         setRepayAmount(prev => ({ ...prev, [loanId]: value }));
     };
 
+    
     // --- Modal Helper Functions ---
+    // (These functions are no longer used here, but in AdminTools.jsx)
+    // We keep handleModalClose for the *details* modal.
     const handleModalClose = () => {
         setIsModalOpen(false);
         setModalAction(null);
     };
-    const handleModalConfirm = () => {
-        if (modalAction) {
-            handleLoanAction(modalAction.loanId, modalAction.action);
-        }
-        handleModalClose();
-    };
 
+    
     // --- Render Logic ---
     if (!walletId) {
         return <WalletPrompt />;
@@ -320,96 +289,111 @@ function MicroLoans() {
                     </button>
                 </form>
 
-                {loading && !Object.values(actionLoading).some(Boolean) && <Spinner />}
-                
-                {/* Case 1: No loans at all */}
-                {!loading && loans.length === 0 && (
-                    <div className="text-center text-neutral-500 my-4 py-8">
-                      <CurrencyDollarIcon className="h-12 w-12 mx-auto text-neutral-400" />
-                      <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Loans Found</h3>
-                      <p className="mt-1 text-sm text-neutral-500">Apply for a new loan using the form below.</p>
-                    </div>
-                )}
+                {/* --- Toggle Button for List --- */}
+                <div className="mt-6 pt-4 border-t border-neutral-200">
+                    <button
+                        onClick={() => setIsListOpen(!isListOpen)}
+                        className="text-xs font-semibold text-primary-blue hover:text-primary-blue-dark"
+                    >
+                        {isListOpen ? 'Hide Loan List' : 'Show Loan List'}
+                    </button>
 
-                {/* Case 2: No search results */}
-                {!loading && loans.length > 0 && filteredLoans.length === 0 && (
-                     <div className="text-center text-neutral-500 my-4 py-8">
-                      <MagnifyingGlassIcon className="h-12 w-12 mx-auto text-neutral-400" />
-                      <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Loans Match Your Search</h3>
-                      <p className="mt-1 text-sm text-neutral-500">Try a different search term.</p>
-                    </div>
-                )}
-
-                {/* Case 3: Show filtered results */}
-                {!loading && filteredLoans.length > 0 && (
-                    <div className="space-y-4 mb-6">
-                        {filteredLoans.map((loan) => {
-                            const isLoadingThisAction = actionLoading[loan.loan_id];
-                            const isApproved = loan.status === 'APPROVED';
-                            return (
-                                <div key={loan.loan_id} className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <span className={`text-xs font-medium px-2.5 py-0.5 rounded ${
-                                            loan.status === 'APPROVED' ? 'bg-accent-green-light text-accent-green-dark' :
-                                            loan.status === 'REJECTED' ? 'bg-accent-red-light text-accent-red-dark' :
-                                            'bg-yellow-100 text-yellow-800'
-                                        }`}>
-                                            {loan.status}
-                                        </span>
-                                        <button 
-                                            onClick={() => setSelectedLoan(loan)}
-                                            className="px-2 py-1 bg-neutral-100 text-neutral-700 text-xs rounded hover:bg-neutral-200 border border-neutral-300"
-                                        >
-                                            Details
-                                        </button>
-                                    </div>
-                                    
-                                    {loan.status === 'PENDING' && (
-                                         <div className="flex gap-2 mt-2 pt-2 border-t border-neutral-100">
-                                             <p className="text-xs text-neutral-500 italic flex-grow">Use Admin Tools tab to approve/reject</p>
-                                         </div>
-                                     )}
-                                     
-                                    <p className="text-sm text-neutral-700 mt-2">
-                                        Amount: <span className="font-semibold">{formatCurrency(loan.amount)}</span>
-                                        {isApproved && ` (Balance: ${formatCurrency(loan.remaining_balance || loan.amount)})`}
-                                    </p>
-                                    <p className="text-xs text-neutral-500">
-                                        Rate: {loan.interest_rate}% | Min. Payment: {formatCurrency(loan.minimum_payment)} | Term: {loan.loan_term_months || 'N/A'} mo.
-                                    </p>
-                                    <p className="text-xs text-neutral-400 mt-1 truncate">ID: {loan.loan_id}</p>
-                                    
-                                    {isApproved && (
-                                        <div className="flex flex-wrap gap-2 items-center mt-3 pt-3 border-t border-neutral-100">
-                                            <input
-                                                type="number"
-                                                placeholder="Repay Amount"
-                                                min="0.01"
-                                                step="0.01"
-                                                value={repayAmount[loan.loan_id] || ''}
-                                                onChange={(e) => handleRepayAmountChange(loan.loan_id, e.target.value)}
-                                                disabled={loading || isLoadingThisAction}
-                                                className="flex-grow basis-28 p-1.5 border border-neutral-300 rounded-md text-sm focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50"
-                                            />
-                                            <button
-                                                onClick={() => handleRepayment(loan.loan_id)}
-                                                disabled={loading || isLoadingThisAction || !(repayAmount[loan.loan_id] > 0)}
-                                                className="px-3 py-1.5 bg-primary-blue text-white text-xs rounded hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-1 disabled:bg-neutral-300 disabled:cursor-not-allowed"
-                                            >
-                                                {isLoadingThisAction ? 'Paying...' : 'Make Payment'}
-                                            </button>
-                                        </div>
-                                    )}
+                    {/* --- Conditionally render list --- */}
+                    {isListOpen && (
+                        <>
+                            {loading && !Object.values(actionLoading).some(Boolean) && <Spinner />}
+                            
+                            {/* Case 1: No loans at all */}
+                            {!loading && loans.length === 0 && (
+                                <div className="text-center text-neutral-500 my-4 py-8">
+                                    <CurrencyDollarIcon className="h-12 w-12 mx-auto text-neutral-400" />
+                                    <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Loans Found</h3>
+                                    <p className="mt-1 text-sm text-neutral-500">Apply for a new loan using the form below.</p>
                                 </div>
-                            );
-                        })}
-                    </div>
-                )}
+                            )}
+
+                            {/* Case 2: No search results */}
+                            {!loading && loans.length > 0 && filteredLoans.length === 0 && (
+                                <div className="text-center text-neutral-500 my-4 py-8">
+                                    <MagnifyingGlassIcon className="h-12 w-12 mx-auto text-neutral-400" />
+                                    <h3 className="mt-2 text-sm font-semibold text-neutral-700">No Loans Match Your Search</h3>
+                                    <p className="mt-1 text-sm text-neutral-500">Try a different search term.</p>
+                                </div>
+                            )}
+
+                            {/* Case 3: Show filtered results */}
+                            {!loading && filteredLoans.length > 0 && (
+                                <div className="space-y-4 mb-6">
+                                    {filteredLoans.map((loan) => {
+                                        const isLoadingThisAction = actionLoading[loan.loan_id];
+                                        const isApproved = loan.status === 'APPROVED';
+                                        return (
+                                            <div key={loan.loan_id} className="p-4 bg-white border border-neutral-200 rounded-md shadow-sm">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <span className={`text-xs font-medium px-2.5 py-0.5 rounded ${
+                                                        loan.status === 'APPROVED' ? 'bg-accent-green-light text-accent-green-dark' :
+                                                        loan.status === 'REJECTED' ? 'bg-accent-red-light text-accent-red-dark' :
+                                                        'bg-yellow-100 text-yellow-800'
+                                                    }`}>
+                                                        {loan.status}
+                                                    </span>
+                                                    <button 
+                                                        onClick={() => setSelectedLoan(loan)}
+                                                        className="px-2 py-1 bg-neutral-100 text-neutral-700 text-xs rounded hover:bg-neutral-200 border border-neutral-300"
+                                                    >
+                                                        Details
+                                                    </button>
+                                                </div>
+                                                
+                                                {loan.status === 'PENDING' && (
+                                                    <div className="flex gap-2 mt-2 pt-2 border-t border-neutral-100">
+                                                        <p className="text-xs text-neutral-500 italic flex-grow">Use Admin Tools tab to approve/reject</p>
+                                                    </div>
+                                                )}
+                                                
+                                                <p className="text-sm text-neutral-700 mt-2">
+                                                    Amount: <span className="font-semibold">{formatCurrency(loan.amount)}</span>
+                                                    {isApproved && ` (Balance: ${formatCurrency(loan.remaining_balance || loan.amount)})`}
+                                                </p>
+                                                <p className="text-xs text-neutral-500">
+                                                    Rate: {loan.interest_rate}% | Min. Payment: {formatCurrency(loan.minimum_payment)} | Term: {loan.loan_term_months || 'N/A'} mo.
+                                                </p>
+                                                <p className="text-xs text-neutral-400 mt-1 truncate">ID: {loan.loan_id}</p>
+                                                
+                                                {isApproved && (
+                                                    <div className="flex flex-wrap gap-2 items-center mt-3 pt-3 border-t border-neutral-100">
+                                                        <input
+                                                            type="number"
+                                                            placeholder="Repay Amount"
+                                                            min="0.01"
+                                                            step="0.01"
+                                                            value={repayAmount[loan.loan_id] || ''}
+                                                            onChange={(e) => handleRepayAmountChange(loan.loan_id, e.target.value)}
+                                                            disabled={loading || isLoadingThisAction}
+                                                            className="flex-grow basis-28 p-1.5 border border-neutral-300 rounded-md text-sm focus:ring-primary-blue focus:border-primary-blue disabled:opacity-50"
+                                                        />
+                                                        <button
+                                                            onClick={() => handleRepayment(loan.loan_id)}
+                                                            disabled={loading || isLoadingThisAction || !(repayAmount[loan.loan_id] > 0)}
+                                                            className="px-3 py-1.5 bg-primary-blue text-white text-xs rounded hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-1 disabled:bg-neutral-300 disabled:cursor-not-allowed"
+                                                        >
+                                                            {isLoadingThisAction ? <Spinner mini={true} /> : 'Make Payment'}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
 
                 {/* --- Form to Apply for New Loan --- */}
                 <form onSubmit={handleApplyLoan} className="mt-6 pt-4 border-t border-neutral-200">
                     <h4 className="text-md font-semibold text-neutral-700 mb-4">Apply for New Loan</h4>
-                   
+                
                     <div className="mb-4">
                         <div className="flex justify-between items-center mb-1">
                             <label htmlFor="loanAmountSlider" className="text-sm font-medium text-neutral-600">
@@ -468,25 +452,29 @@ function MicroLoans() {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="px-4 py-2 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed"
+                            className="px-4 py-2 w-32 bg-primary-blue text-white rounded-md hover:bg-primary-blue-dark focus:outline-none focus:ring-2 focus:ring-primary-blue focus:ring-offset-2 disabled:bg-primary-blue-light disabled:cursor-not-allowed"
                         >
-                            {loading ? 'Submitting...' : 'Apply for Loan'}
+                            {loading ? <Spinner mini={true} /> : 'Apply for Loan'}
                         </button>
                     </div>
                 </form>
             </div>
 
-            {/* --- Confirm Modal (for Admin actions) --- */}
+            {/* --- Modals --- */}
             <ConfirmModal
                 isOpen={isModalOpen}
                 onClose={handleModalClose}
-                onConfirm={handleModalConfirm}
-                title={modalAction?.action === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
-                confirmText={modalAction?.action === 'approve' ? 'Approve' : 'Reject'}
-                confirmVariant={modalAction?.action === 'approve' ? 'primary' : 'danger'}
+                onConfirm={() => {
+                    // This function is now handled in AdminTools.jsx
+                    // This modal is only here to support the details modal
+                    // A better refactor would be to move modal state into context
+                    // but for now this is fine.
+                    handleModalClose();
+                }}
+                title="Confirm Action"
+                confirmText="Confirm"
             >
-                Are you sure you want to {modalAction?.action} this loan?
-                {modalAction?.action === 'approve' && ' This will fund the user\'s wallet.'}
+                This modal is for details.
             </ConfirmModal>
             
             <LoanDetailsModal 

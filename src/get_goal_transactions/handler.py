@@ -4,10 +4,17 @@ import boto3
 from decimal import Decimal
 from urllib.parse import unquote
 from botocore.exceptions import ClientError
-from boto3.dynamodb.conditions import Key
+import logging
 
-# --- CORS Configuration ---
+# Set up logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# --- Environment Variables ---
+LOG_TABLE_NAME = os.environ.get('TRANSACTIONS_LOG_TABLE_NAME')
 ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
+
+# --- CORS Headers ---
 OPTIONS_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -18,19 +25,8 @@ GET_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Credentials": True
 }
-# --- End CORS Configuration ---
 
-LOG_TABLE_NAME = os.environ.get('TRANSACTIONS_LOG_TABLE_NAME')
-GSI_NAME = 'related_id-timestamp-index' # Name of the new GSI
-
-dynamodb = boto3.resource('dynamodb')
-
-if not LOG_TABLE_NAME:
-    print("ERROR: TRANSACTIONS_LOG_TABLE_NAME environment variable not set.")
-    log_table = None
-else:
-    log_table = dynamodb.Table(LOG_TABLE_NAME)
-
+# --- DecimalEncoder ---
 class DecimalEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, Decimal):
@@ -38,52 +34,75 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(o)
 
 def get_goal_transactions(event, context):
-    """Retrieves transaction logs for a specific goal_id. Handles OPTIONS."""
-
+    """
+    API: GET /savings-goal/{goal_id}/transactions
+    Retrieves all transactions for a specific savings goal using the GSI.
+    """
+    
+    # --- Initialize boto3 inside the handler ---
+    dynamodb = boto3.resource('dynamodb')
+    log_table = dynamodb.Table(LOG_TABLE_NAME) if LOG_TABLE_NAME else None
+    
     # --- CORS Preflight Check ---
     http_method = event.get('httpMethod', '').upper()
     if http_method == 'OPTIONS':
-        print("Handling OPTIONS request for get_goal_transactions")
+        logger.info("Handling OPTIONS preflight request for get_goal_transactions")
         return { "statusCode": 200, "headers": OPTIONS_CORS_HEADERS, "body": "" }
-    # --- End CORS Preflight Check ---
 
     if not log_table:
-        return { "statusCode": 500, "headers": GET_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error: Log table not found."}) }
+        log_message = {
+            "status": "error",
+            "action": "get_goal_transactions",
+            "message": "FATAL: TRANSACTIONS_LOG_TABLE_NAME environment variable not set."
+        }
+        logger.error(json.dumps(log_message))
+        return { "statusCode": 500, "headers": GET_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error."}) }
 
-    # --- GET Logic ---
     if http_method == 'GET':
+        goal_id = "unknown"
+        log_context = {"action": "get_goal_transactions"}
         try:
             goal_id = unquote(event['pathParameters']['goal_id']).strip()
-            limit = int(event.get('queryStringParameters', {}).get('limit', 10)) # Smaller limit for goal history
-            if limit <= 0: limit = 10
+            log_context["goal_id"] = goal_id
+            
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Querying GSI for goal transactions."}))
 
-            print(f"Querying transactions for related_id (goal_id): {goal_id}, limit: {limit}")
-
-            # Query the new GSI using related_id (which stores goal_id for SAVINGS_ADD)
+            # Query the Global Secondary Index on the logs table
             response = log_table.query(
-                IndexName=GSI_NAME,
-                KeyConditionExpression=Key('related_id').eq(goal_id),
-                ScanIndexForward=False, # Sorts newest first
-                # Filter for only SAVINGS_ADD type if needed, but usually just querying by goal is enough
-                # FilterExpression='#type = :typeVal',
-                # ExpressionAttributeNames={'#type': 'type'},
-                # ExpressionAttributeValues={':typeVal': 'SAVINGS_ADD'},
-                Limit=limit
+                IndexName='related_id-timestamp-index',
+                KeyConditionExpression=boto3.dynamodb.conditions.Key('related_id').eq(goal_id),
+                # Only get savings-related transactions for this goal
+                FilterExpression='#type IN (:add, :redeem, :refund)',
+                ExpressionAttributeNames={'#type': 'type'},
+                ExpressionAttributeValues={
+                    ':add': 'SAVINGS_ADD',
+                    ':redeem': 'SAVINGS_REDEEM',
+                    ':refund': 'SAVINGS_REFUND'
+                },
+                ScanIndexForward=False  # Sort by timestamp descending
             )
-
+            
             items = response.get('Items', [])
-            print(f"Found {len(items)} transactions for goal {goal_id}.")
 
             return {
                 "statusCode": 200,
                 "headers": GET_CORS_HEADERS,
                 "body": json.dumps(items, cls=DecimalEncoder)
             }
+            
         except ClientError as ce:
-             print(f"DynamoDB Error: {ce}")
+             logger.error(json.dumps({**log_context, "status": "error", "error_code": ce.response['Error']['Code'], "error_message": str(ce)}))
              return { "statusCode": 500, "headers": GET_CORS_HEADERS, "body": json.dumps({"message": "Database error.", "error": str(ce)}) }
         except Exception as e:
-            print(f"Error: {e}")
-            return { "statusCode": 500, "headers": GET_CORS_HEADERS, "body": json.dumps({"message": "Failed to get goal transactions.", "error": str(e)}) }
+            logger.error(json.dumps({**log_context, "status": "error", "error_message": str(e)}))
+            return {
+                "statusCode": 500,
+                "headers": GET_CORS_HEADERS,
+                "body": json.dumps({"message": "Failed to retrieve goal transactions.", "error": str(e)})
+            }
     else:
-        return { "statusCode": 405, "headers": GET_CORS_HEADERS, "body": json.dumps({"message": f"Method {http_method} not allowed."}) }
+         return {
+            "statusCode": 405,
+            "headers": GET_CORS_HEADERS,
+            "body": json.dumps({"message": f"Method {http_method} not allowed."})
+        }
