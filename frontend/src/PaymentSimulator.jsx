@@ -14,8 +14,8 @@ function PaymentSimulator() {
   const [transactions, setTransactions] = useState([]);
   const [loadingList, setLoadingList] = useState(false); // For the list
   const [loadingAction, setLoadingAction] = useState(false); // For form buttons
-  const [merchant, setMerchant] = useState('DemoMerchant');
-  const [amount, setAmount] = useState('50.00');
+  const [merchant, setMerchant] = useState('');
+  const [amount, setAmount] = useState('');
   
   // State for manual status check
   const [txIdToCheck, setTxIdToCheck] = useState('');

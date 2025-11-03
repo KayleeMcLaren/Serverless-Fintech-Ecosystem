@@ -250,6 +250,10 @@ function DebtOptimiser() {
     <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 mt-8 shadow-sm">
       <h2 className="text-xl font-semibold text-neutral-700 mb-6 text-center">Debt Repayment Optimiser</h2>
 
+      <p className="text-sm text-neutral-600 mb-6 text-center max-w-xl mx-auto">
+        This tool helps you find the best strategy to pay off your loans. Enter an <b>extra payment</b> amount (anything above your minimums), and it will compare two popular methods: <b>Avalanche</b> (highest interest first) and <b>Snowball</b> (lowest balance first).
+      </p>
+
       {/* --- Input Form --- */}
       <form onSubmit={handleCalculate} className="mb-6 pb-4 border-b border-neutral-200">
         

@@ -278,9 +278,8 @@ function SavingsGoals() {
                
                 <div className="w-full bg-neutral-200 rounded-full h-2.5 dark:bg-neutral-700 mt-1 mb-3">
                   <div
-                    className={`h-2.5 rounded-full transition-all duration-300 ease-out ${
-                      isComplete ? 'bg-accent-green' : 'bg-primary-blue'
-                    }`}
+                    // --- Always blue ---
+                    className={`h-2.5 rounded-full transition-all duration-300 ease-out bg-primary-blue`}
                     style={{ width: `${percentage}%` }}
                   ></div>
                 </div>
