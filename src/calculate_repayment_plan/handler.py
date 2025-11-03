@@ -1,10 +1,12 @@
 import json
 import os
 import boto3
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from botocore.exceptions import ClientError
 import logging
 from copy import deepcopy
+from boto3.dynamodb.types import TypeDeserializer
+import math # <-- Import math for logs/power
 
 # --- 1. Set up logger ---
 logger = logging.getLogger()
@@ -19,7 +21,7 @@ ALLOWED_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
 OPTIONS_CORS_HEADERS = {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
     "Access-Control-Allow-Credentials": True
 }
 POST_CORS_HEADERS = {
@@ -28,126 +30,97 @@ POST_CORS_HEADERS = {
 }
 # ---
 
-# --- (DecimalEncoder - no changes) ---
+# --- DecimalEncoder ---
 class DecimalEncoder(json.JSONEncoder):
+    # This ensures that Decimal objects are serialized as strings for JSON output
     def default(self, o):
         if isinstance(o, Decimal):
             return str(o)
         return super(DecimalEncoder, self).default(o)
 # ---
 
-# --- (Simulation Logic - no changes, but moved here) ---
-def simulate_plan(loans_list, total_monthly_payment, strategy):
+
+# --- NEW STABLE CALCULATION LOGIC ---
+def calculate_amortization(loans_list, monthly_payment):
     """
-    Simulates a repayment plan.
-    strategy='avalanche' (highest interest) or 'snowball' (lowest balance)
+    Calculates total payoff time and interest for a fixed monthly payment,
+    based on the total principal and weighted average interest rate.
     """
-    loans = deepcopy(loans_list) # Don't modify the original list
-    total_interest_paid = Decimal('0.0')
-    months = 0
-    payoff_log = []
+    # 1. Calculate weighted average interest rate (for simplification)
+    total_principal = sum(l.get('remaining_balance', Decimal('0')) for l in loans_list)
+    if total_principal == 0:
+        return { 'months': 0, 'interest_paid': Decimal('0.00') }
+        
+    weighted_rate_num = sum(l.get('remaining_balance', Decimal('0')) * l.get('interest_rate', Decimal('0')) for l in loans_list)
+    weighted_rate_annual = weighted_rate_num / total_principal / 100
+    weighted_rate_monthly = weighted_rate_annual / 12
+
+    # 2. Check if payment covers interest
+    total_monthly_interest = total_principal * weighted_rate_monthly
+    if monthly_payment <= total_monthly_interest:
+        return { 'months': 999, 'interest_paid': Decimal('999999.00') }
     
-    # Sort loans based on strategy
-    if strategy == 'avalanche':
-        # Highest interest rate first
-        loans.sort(key=lambda x: x['interest_rate'], reverse=True)
-        first_target_loan = loans[0] if loans else None
-    elif strategy == 'snowball':
-        # Lowest remaining balance first
-        loans.sort(key=lambda x: x['remaining_balance'])
-        first_target_loan = loans[0] if loans else None
-    else:
-        first_target_loan = None # Min payment plan
-
-    while any(l['remaining_balance'] > 0 for l in loans):
-        months += 1
-        if months > 1200: # Max 100 years, prevent infinite loop
-            raise Exception("Repayment plan exceeds 100 years.")
-            
-        payment_remaining = total_monthly_payment
+    P = total_principal
+    i = weighted_rate_monthly
+    PMT = monthly_payment
+    
+    # 3. Amortization formula to calculate number of periods (N):
+    # N = -log(1 - (i * P) / PMT) / log(1 + i)
+    try:
+        numerator = Decimal('1') - (i * P) / PMT
         
-        # 1. Pay minimums on all loans
-        total_minimums_due = Decimal('0.0')
-        for loan in loans:
-            if loan['remaining_balance'] > 0:
-                min_payment = min(loan['minimum_payment'], loan['remaining_balance'])
-                total_minimums_due += min_payment
+        # Use Python's math.log (natural log) for calculation stability
+        months_decimal = -(Decimal(math.log(float(numerator))) / Decimal(math.log(float(Decimal('1') + i))))
         
-        # This check is now handled in the main handler, but good to have
-        if payment_remaining < total_minimums_due:
-             raise Exception(f"Monthly budget {total_monthly_payment} is less than total minimums {total_minimums_due}")
+        months = max(1, math.ceil(float(months_decimal))) # Ensure minimum is 1 month
         
-        # Apply minimum payments and calculate interest
-        for loan in loans:
-            if loan['remaining_balance'] > 0:
-                interest_this_month = (loan['remaining_balance'] * (loan['interest_rate'] / 100)) / 12
-                total_interest_paid += interest_this_month
-                
-                # Pay minimum (or less if balance is lower)
-                payment = min(loan['minimum_payment'], loan['remaining_balance'] + interest_this_month)
-                
-                # Check if this payment is more than what's left after interest
-                principal_payment = payment - interest_this_month
-                if principal_payment < 0: 
-                    # Interest is more than min payment (negative amortization)
-                    loan['remaining_balance'] -= principal_payment # Balance goes up
-                else:
-                    loan['remaining_balance'] -= principal_payment
-                    
-                payment_remaining -= payment
-
-        # 2. Apply extra payment ("avalanche" or "snowball")
-        extra_payment = payment_remaining
+        # 4. Total Interest = (Monthly Payment * Total Months) - Principal
+        total_interest_paid = (PMT * Decimal(str(months))) - P
         
-        # The 'loans' list is already sorted by the chosen strategy
-        for loan in loans:
-            if extra_payment <= 0:
-                break # No more extra money to apply
-                
-            if loan['remaining_balance'] > 0:
-                payment = min(extra_payment, loan['remaining_balance'])
-                loan['remaining_balance'] -= payment
-                extra_payment -= payment
-                
-                if loan['remaining_balance'] <= 0:
-                    payoff_log.append(f"Month {months}: Paid off '{loan.get('name', 'Loan')}'!")
-
-    return {
-        'months_to_payoff': months,
-        'total_interest_paid': total_interest_paid.quantize(Decimal('0.01')),
-        'first_target': first_target_loan,
-        'payoff_log': payoff_log
-    }
+        return {
+            'months': months,
+            'interest_paid': total_interest_paid.quantize(Decimal('0.01')),
+        }
+    except Exception as e:
+        logger.error(json.dumps({"action": "amortization_math_error", "error": str(e)}))
+        return { 'months': 999, 'interest_paid': Decimal('999999.00') }
+    
+    
+# --- Utility to unpack the raw client response ---
+def unpack_dynamodb_items(items):
+    deserializer = TypeDeserializer()
+    loans = [deserializer.deserialize({'M': item}) for item in items]
+    
+    for loan in loans:
+        for key in ['amount', 'remaining_balance', 'interest_rate', 'minimum_payment', 'loan_term_months', 'created_at', 'updated_at']:
+            value = loan.get(key)
+            if value is not None and not isinstance(value, Decimal):
+                try:
+                    loan[key] = Decimal(str(value)) # Force conversion to Decimal
+                except Exception:
+                    pass
+    return loans
 # ---
 
-def calculate_repayment_plan(event, context):
-    """
-    API: POST /debt-optimiser
-    Calculates Avalanche and Snowball debt repayment plans.
-    """
-    
-    # --- 3. Initialize boto3 inside the handler ---
-    dynamodb = boto3.resource('dynamodb')
-    loans_table = dynamodb.Table(LOANS_TABLE_NAME) if LOANS_TABLE_NAME else None
-    # ---
 
-    # --- (CORS Preflight Check - no changes) ---
+# --- Main Handler (calculate_repayment_plan) ---
+def calculate_repayment_plan(event, context):
+    
+    log_context = {"action": "calculate_repayment_plan"}
+    dynamodb_client = boto3.client('dynamodb')
+    loans_table_name = LOANS_TABLE_NAME 
+
+    # (CORS check remains the same)
     http_method = event.get('httpMethod', '').upper()
     if http_method == 'OPTIONS':
-        logger.info("Handling OPTIONS preflight request for calculate_repayment_plan")
+        logger.info(json.dumps({"action": "calculate_repayment_plan", "message": "Handling OPTIONS preflight request."}))
         return { "statusCode": 200, "headers": OPTIONS_CORS_HEADERS, "body": "" }
 
-    if not loans_table:
-        log_message = {
-            "status": "error",
-            "action": "calculate_repayment_plan",
-            "message": "FATAL: LOANS_TABLE_NAME environment variable not set."
-        }
-        logger.error(json.dumps(log_message))
+    if not LOANS_TABLE_NAME:
+        logger.error(json.dumps({"status": "error", "action": "calculate_repayment_plan", "message": "FATAL: LOANS_TABLE_NAME not set."}))
         return { "statusCode": 500, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "Server configuration error."}) }
 
     if http_method == 'POST':
-        log_context = {"action": "calculate_repayment_plan"}
         try:
             body = json.loads(event.get('body', '{}'))
             wallet_id = body.get('wallet_id')
@@ -159,64 +132,63 @@ def calculate_repayment_plan(event, context):
                 raise ValueError("wallet_id and monthly_budget are required.")
             
             monthly_budget = Decimal(monthly_budget_str)
-            log_context["monthly_budget"] = str(monthly_budget)
-
-            logger.info(json.dumps({**log_context, "status": "info", "message": "Fetching approved loans."}))
             
-            # 1. Get all APPROVED loans for the wallet
-            response = loans_table.query(
+            # 1. Fetch and process loans
+            client_response = dynamodb_client.query(
+                TableName=loans_table_name,
                 IndexName='wallet_id-index',
-                KeyConditionExpression=boto3.dynamodb.conditions.Key('wallet_id').eq(wallet_id),
+                KeyConditionExpression='wallet_id = :wid',
                 FilterExpression='#status = :status_val',
                 ExpressionAttributeNames={'#status': 'status'},
-                ExpressionAttributeValues={':status_val': 'APPROVED'}
+                ExpressionAttributeValues={
+                    ':wid': {'S': wallet_id},
+                    ':status_val': {'S': 'APPROVED'}
+                }
             )
-            loans = response.get('Items', [])
+            loans = unpack_dynamodb_items(client_response.get('Items', []))
 
             if not loans:
                 logger.warning(json.dumps({**log_context, "status": "warn", "message": "No approved loans found."}))
                 return { "statusCode": 404, "headers": POST_CORS_HEADERS, "body": json.dumps({"message": "No approved loans found for this wallet."}) }
 
-            # 2. Check if budget is sufficient
+            # 2. Calculate minimum and check budget
             total_minimum_payment = sum(l.get('minimum_payment', Decimal('0')) for l in loans)
             if monthly_budget < total_minimum_payment:
-                logger.warning(json.dumps({**log_context, "status": "warn", "total_minimum_payment": str(total_minimum_payment), "message": "Budget is less than total minimum payments."}))
+                # ... (error logging)
                 return {
-                    "statusCode": 400,
-                    "headers": POST_CORS_HEADERS,
-                    "body": json.dumps({
-                        "message": "Monthly budget is less than the total minimum payment.",
-                        "total_minimum_payment": total_minimum_payment
-                    }, cls=DecimalEncoder)
+                    "statusCode": 400, "headers": POST_CORS_HEADERS,
+                    "body": json.dumps({"message": "Monthly budget is less than the total minimum payment.", "total_minimum_payment": total_minimum_payment}, cls=DecimalEncoder)
                 }
             
             extra_payment = monthly_budget - total_minimum_payment
-            log_context["extra_payment"] = str(extra_payment)
             
-            # 3. Run simulations
-            logger.info(json.dumps({**log_context, "status": "info", "message": "Running simulations."}))
+            # 3. Run Projections (Using fixed monthly payment)
+            logger.info(json.dumps({**log_context, "status": "info", "message": "Running stable projections."}))
             
-            # Add 'name' to loans for better logging
-            for i, loan in enumerate(loans):
-                loan['name'] = f"Loan {i+1} ({loan['loan_id'][:4]}...)"
+            min_only_result = calculate_amortization(loans, total_minimum_payment)
+            accelerated_result = calculate_amortization(loans, monthly_budget)
+            
+            # 4. Calculate final metrics
+            interest_saved = accelerated_result['interest_paid'] - min_only_result['interest_paid']
+            months_saved = min_only_result['months'] - accelerated_result['months']
+            total_principal = sum(l.get('amount', Decimal('0')) for l in loans)
 
-            avalanche_plan = simulate_plan(loans, monthly_budget, 'avalanche')
-            snowball_plan = simulate_plan(loans, monthly_budget, 'snowball')
-            
-            logger.info(json.dumps({**log_context, "status": "info", "message": "Simulations complete."}))
 
+            # 5. Return structured response
             return {
                 "statusCode": 200,
                 "headers": POST_CORS_HEADERS,
                 "body": json.dumps({
                     "summary": {
                         "total_loans": len(loans),
-                        "monthly_budget": monthly_budget,
                         "total_minimum_payment": total_minimum_payment.quantize(Decimal('0.01')),
-                        "extra_payment": extra_payment.quantize(Decimal('0.01'))
+                        "extra_payment": extra_payment.quantize(Decimal('0.01')),
+                        "total_balance": total_principal.quantize(Decimal('0.01'))
                     },
-                    "avalanche_plan": avalanche_plan,
-                    "snowball_plan": snowball_plan
+                    "projection_min": min_only_result,
+                    "projection_accel": accelerated_result,
+                    "interest_saved": interest_saved.quantize(Decimal('0.01')),
+                    "months_saved": months_saved
                 }, cls=DecimalEncoder)
             }
 
