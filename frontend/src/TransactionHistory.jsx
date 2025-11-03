@@ -90,7 +90,6 @@ function TransactionHistory() {
 
   return (
     <div className="mt-5 pt-4 border-t border-neutral-200">
-      <h4 className="text-md font-semibold text-neutral-700 mb-3">Transaction History</h4>
       
       {loading && (
           <div className="scale-75">
