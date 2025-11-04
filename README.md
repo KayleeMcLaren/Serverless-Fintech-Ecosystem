@@ -1,4 +1,4 @@
-![header](https://capsule-render.vercel.app/api?type=waving&height=200&color=gradient&text=Serverless%20Fintech%20Ecosystem&fontSize=35&strokeWidth=0&desc=An%20Event-Driven%20Microservice%20Portfolio%20on%20AWS&descAlign=50&descAlignY=62&reversal=false&fontAlign=50&fontAlignY=40)
+![header](https://capsule-render.vercel.app/api?type=waving&height=200&color=gradient&text=Serverless%20Fintech%20CEcosystem&fontSize=35&strokeWidth=0&desc=An%20Event-Driven%20Microservice%20Portfolio%20on%20AWS&descAlign=50&descAlignY=62&reversal=false&fontAlign=50&fontAlignY=40)
 
 ## 🚀 Live Demo
 
