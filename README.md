@@ -27,6 +27,7 @@ This is a portfolio project demonstrating a complete, **serverless**, and **even
 
 All infrastructure is provisioned and managed using **Terraform**, demonstrating **Infrastructure as Code (IaC)** best practices, including **multi-environment workspaces** (`stg` and `prd`).
 
+---
 
 ## ✅ Project Status: Complete
 
@@ -38,6 +39,25 @@ All infrastructure is provisioned and managed using **Terraform**, demonstrating
 | **Payment Simulator** | ✅ | Asynchronous, event-driven payment processing saga. |
 | **Savings Goal Manager** | ✅ | Manages CRUD for savings goals and handles atomic fund transfers. |
 | **Debt Repayment Optimiser** | ✅ | Provides projections for accelerated debt payoff plans. |
+
+---
+
+## 💡 Why I Built This
+
+This project started as a way to deepen my understanding of event-driven architectures and serverless patterns. Working in fintech at AIMLScore, I wanted to build something that would challenge me to implement the production-grade patterns I'd been exposed to:
+
+- **Event choreography** instead of orchestration (letting services communicate asynchronously)
+- **Atomic transactions** for financial correctness (all-or-nothing operations)
+- **Step Functions** for complex workflows (KYC with human-in-the-loop approval)
+- **Comprehensive testing** with mocked AWS services (no actual AWS calls in tests)
+
+Along the way, I learned invaluable lessons about:
+- The tradeoffs between different architectural patterns
+- How to structure Terraform for multi-environment management
+- The importance of observability (structured logging saved me countless debugging hours)
+- Why financial systems require different correctness guarantees than typical CRUD apps
+
+This project represents not just what I can build, but how I approach learning: starting with production patterns and building a complete, deployable system.
 
 ---
 
@@ -55,7 +75,6 @@ This workflow demonstrates the secure entry point and highlights the serverless 
 4. The **Client** attaches this token to the Authorization header of all subsequent API requests.
 5. **API Gateway** uses a **Cognito Authorizer** to validate the token's signature and expiration before forwarding the request to any downstream Lambda handler.
 
-
 **2. 📝 User Onboarding & KYC Orchestration (SFN):**
 This is a **State Machine** (SFN) workflow, guaranteeing sequential, auditable steps for user approval, including a dedicated path for human intervention.
 1. **Client** calls `POST /onboarding/start` (`src/start_onboarding/handler.py`). The Lambda creates a `PENDING_ID_VERIFICATION` record and starts the **Step Function** (SFN).
@@ -71,7 +90,6 @@ This is a **State Machine** (SFN) workflow, guaranteeing sequential, auditable s
 5. **SFN Task: Credit Check**
    * The SFN executes the `credit_check_mock` Lambda (using the logic in `src/credit_check_mock/handler.py`), which returns a score and a decision.
 6. **SFN Conclusion:** If the credit check is approved, the SFN executes the final `ProvisionAccount` task, which invokes the private `create_wallet` Lambda. The user's final `wallet_id` and `onboarding_status` are set to `APPROVED`.
-
 
 **3. 💸 Loan Approval Saga:**
 1.  **Client** `POST`s to `/loan/{loan_id}/approve`.
@@ -124,7 +142,6 @@ This is a **State Machine** (SFN) workflow, guaranteeing sequential, auditable s
 * **Notifications:** **React Hot Toast**
 
 ---
-
 
 ## 📂 Project Structure
 
@@ -222,7 +239,7 @@ This workflow is for development.
 1.  `cd ../frontend`
 2.  Create a file named `.env.production` and add the `prd` API URL:
     ```
-    VITE_API_URL="httpshttps://your-prd-api-url-from-step-4/v1"
+    VITE_API_URL="https://your-prd-api-url-from-step-4/v1"
     ```
 3.  `npm install`
 4.  `npm run build`
@@ -240,7 +257,8 @@ This workflow is for development.
 Code quality is enforced via a GitHub Actions pipeline that executes unit tests and validates all Infrastructure as Code (IaC) before deployment.
 
 ### 1. CI/CD Pipeline (`.github/workflows/ci.yml`)
-The pipeline runs unit tests first, ensuring code quality, and then validates the Terraform configuration.
+The pipeline validates code quality on every push and pull request. It runs unit tests first, then validates Terraform configuration. 
+**Note:** This is a validation pipeline; actual deployment is done manually via Terraform workspaces as described in the deployment section.
 
 ```yaml
 name: CI Pipeline
