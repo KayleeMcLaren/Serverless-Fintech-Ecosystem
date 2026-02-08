@@ -13,11 +13,11 @@ This project was developed with a relentless focus on modern, cloud-native engin
 
 | Category | Achievement | Implementation Details |
 | :--- | :---: | :--- |
-| ** Security & Auth** | Secured All APIs with Cognito | Every major endpoint (20+ routes) is protected using an AWS Cognito Authorizer to validate JWT tokens, ensuring a production-ready, multi-user system architecture. |
-| ** Testing & CI/CD** | Automated Unit Testing | Implemented Pytest and Moto (AWS mocking) unit tests for core financial logic and integrated them into the GitHub Actions CI/CD pipeline to guarantee zero regressions. |
-| ** Observability** | Structured JSON Logging | Refactored all 20+ Lambda handlers to output queryable JSON logs (instead of plaintext), dramatically improving the efficiency of debugging and monitoring in CloudWatch Log Insights. |
-| ** Workflow Mgmt** | Step Function Orchestration | Implemented a reliable, non-blocking user onboarding workflow (KYC/Wallet creation) managed by AWS Step Functions (SFN). |
-| ** Financial Logic** | Stable Amortization Engine | Replaced brittle simulation logic with a stable mathematical projection engine, accurately calculating interest saved and payoff time for accelerated debt repayment. |
+| **Security & Auth** | Secured All APIs with Cognito | Every major endpoint (20+ routes) is protected using an AWS Cognito Authorizer to validate JWT tokens, ensuring a production-ready, multi-user system architecture. |
+| **Testing & CI/CD** | Automated Unit Testing | Implemented Pytest and Moto (AWS mocking) unit tests for core financial logic and integrated them into the GitHub Actions CI/CD pipeline to guarantee zero regressions. |
+| **Observability** | Structured JSON Logging | Refactored all 20+ Lambda handlers to output queryable JSON logs (instead of plaintext), dramatically improving the efficiency of debugging and monitoring in CloudWatch Log Insights. |
+| **Workflow Mgmt** | Step Function Orchestration | Implemented a reliable, non-blocking user onboarding workflow (KYC/Wallet creation) managed by AWS Step Functions (SFN). |
+| **Financial Logic** | Stable Amortization Engine | Replaced brittle simulation logic with a stable mathematical projection engine, accurately calculating interest saved and payoff time for accelerated debt repayment. |
 
 ---
 
