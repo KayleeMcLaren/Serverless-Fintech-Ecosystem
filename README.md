@@ -8,6 +8,23 @@
 
 ---
 
+## Why This Project Exists
+
+This is a learning project built to deeply understand production-grade patterns for distributed fintech systems. While I've worked on production serverless systems as part of a team, this project let me architect a complete event-driven ecosystem from scratch—making all the architectural decisions myself and experiencing the full complexity of distributed transactions, eventual consistency, and multi-service coordination.
+
+**What makes this different from a tutorial project:**
+- Implements real fintech patterns (atomic transactions, audit trails, reconciliation)
+- Production-grade infrastructure (multi-environment with Terraform workspaces)
+- Comprehensive testing with AWS mocking (not just "happy path" tests)
+- Security throughout (Cognito auth on all endpoints, IAM least privilege)
+- Deployed and running (you can try it: https://d18l23eogq3lrf.cloudfront.net)
+
+**For hiring managers:** This demonstrates I can design systems independently, not just implement features. The architecture decisions here—event choreography via SNS, Step Functions for KYC, atomic DynamoDB transactions—show understanding of distributed systems trade-offs.
+
+**Technical scope:** ~10,000 lines of code across 20+ Lambda functions, 6 DynamoDB tables, comprehensive test coverage with Pytest and Moto, multi-environment IaC with Terraform.
+
+---
+
 ## Core Technical Achievements (Production-Grade Features)
 This project was developed with a relentless focus on modern, cloud-native engineering practices to demonstrate expertise in highly available, secure, and maintainable systems.
 
@@ -18,6 +35,27 @@ This project was developed with a relentless focus on modern, cloud-native engin
 | **Observability** | Structured JSON Logging | Refactored all 20+ Lambda handlers to output queryable JSON logs (instead of plaintext), dramatically improving the efficiency of debugging and monitoring in CloudWatch Log Insights. |
 | **Workflow Mgmt** | Step Function Orchestration | Implemented a reliable, non-blocking user onboarding workflow (KYC/Wallet creation) managed by AWS Step Functions (SFN). |
 | **Financial Logic** | Stable Amortization Engine | Replaced brittle simulation logic with a stable mathematical projection engine, accurately calculating interest saved and payoff time for accelerated debt repayment. |
+
+---
+
+## My Role & Context
+
+**Solo project:** I designed, built, tested, and deployed this entire system independently. Every architectural decision, every line of code, every test is mine.
+
+**Why this matters:** In my day job at AIMLScore, I was part of a 4-person team where I owned specific components (dashboard, infrastructure) but worked under senior developer guidance for overall architecture. This project demonstrates I can also architect complete systems from scratch.
+
+**Time investment:** Built over 3 months (Oct 2025 - Jan 2026) while working full-time, averaging 15-20 hours per week.
+
+**What I learned:**
+- Event choreography is powerful but debugging is harder (implemented structured logging to compensate)
+- Step Functions are worth the cost for long-running workflows (human approval, scheduled tasks)
+- DynamoDB's TransactWriteItems saved me from complex distributed transaction logic
+- Multi-environment Terraform requires discipline but pays off immediately
+- Pytest + Moto let me test AWS integrations without mocking everything manually
+
+**Technologies I was already comfortable with:** Python, Lambda, DynamoDB basics, React basics
+
+**Technologies I learned for this project:** SNS subscription filters, Step Functions state machines, Terraform workspaces, CloudFront OAC, Cognito Triggers, DynamoDB transactions (TransactWriteItems)
 
 ---
 
@@ -44,20 +82,18 @@ All infrastructure is provisioned and managed using **Terraform**, demonstrating
 
 ## Why I Built This
 
-This project started as a way to deepen my understanding of event-driven architectures and serverless patterns. Working in fintech at AIMLScore, I wanted to build something that would challenge me to implement the production-grade patterns I'd been exposed to:
+**Short answer:** To understand distributed systems patterns that I see in production but haven't architected myself.
 
-- **Event choreography** instead of orchestration (letting services communicate asynchronously)
-- **Atomic transactions** for financial correctness (all-or-nothing operations)
-- **Step Functions** for complex workflows (KYC with human-in-the-loop approval)
-- **Comprehensive testing** with mocked AWS services (no actual AWS calls in tests)
+**Long answer:** At AIMLScore, I worked on a serverless fintech system, but our senior developer designed the event-driven architecture. I implemented features and owned infrastructure, but I wanted to deeply understand the *why* behind architectural decisions:
 
-Along the way, I learned invaluable lessons about:
-- The tradeoffs between different architectural patterns
-- How to structure Terraform for multi-environment management
-- The importance of observability (structured logging saved me countless debugging hours)
-- Why financial systems require different correctness guarantees than typical CRUD apps
+- Why choose choreography over orchestration?
+- How do you ensure financial correctness across services?
+- What are the trade-offs between Lambda and containers?
+- How do you structure Terraform for multi-environment?
 
-This project represents not just what I can build, but how I approach learning: starting with production patterns and building a complete, deployable system.
+Building this from scratch forced me to answer these questions. Every decision—SNS vs Kafka, DynamoDB vs RDS, Lambda vs ECS—required research, prototyping, and understanding trade-offs.
+
+**Outcome:** I now understand these patterns well enough to have informed opinions about when to use them (and when not to). This project represents my transition from "implementing features" to "understanding systems."
 
 ---
 
@@ -143,6 +179,46 @@ This is a **State Machine** (SFN) workflow, guaranteeing sequential, auditable s
 
 ---
 
+## Key Architecture Decisions
+
+### Why Event Choreography Over Orchestration?
+
+Services publish events to SNS topics without knowing who's listening. This decouples microservices, making the system more resilient and easier to extend. 
+
+**Example:** When a loan is approved, the loan service publishes a `LOAN_APPROVED` event. The wallet service subscribes to this event and funds the account. The loan service doesn't know or care how the wallet service works—they're completely decoupled.
+
+**Trade-off:** Harder to debug distributed flows (solved with structured JSON logging) and no single "orchestrator" to see the whole flow (solved with CloudWatch Log Insights queries).
+
+**Alternative considered:** Step Functions for orchestration. Rejected because it centralizes control, making each new workflow require central changes. Choreography scales better for this use case.
+
+### Why DynamoDB Over RDS?
+
+Financial transactions have predictable access patterns and require consistent low latency. DynamoDB's single-digit millisecond reads and atomic writes (TransactWriteItems) ensure financial correctness while handling spiky traffic patterns common in fintech.
+
+**Trade-off:** More complex query patterns compared to SQL. Solved with thoughtful GSI design and denormalization where needed.
+
+**Alternative considered:** PostgreSQL with RDS. Rejected because connection pooling from Lambda is complex, and we don't need relational joins for these access patterns.
+
+### Why Step Functions for KYC?
+
+Human-in-the-loop approval requires durable state management that can wait hours or days. Step Functions maintains workflow state indefinitely while keeping Lambda executions short and cost-effective.
+
+**Trade-off:** More expensive per execution than pure Lambda. Worth it for the built-in retry logic, error handling, and state visualization.
+
+### Scaling Beyond This Demo
+
+In a production system at JUMO's scale (millions of users, high throughput), I'd make different choices:
+
+- **Kafka instead of SNS** for event streaming (replay capability, ordering guarantees, better throughput)
+- **ECS/EKS instead of Lambda** for services requiring consistent performance SLAs and complex networking
+- **Separate read/write models** (CQRS) for services with heavy query loads
+- **Distributed tracing** (X-Ray or similar) for debugging across services
+- **Blue-green deployments** for zero-downtime updates
+
+**Why I didn't build these:** This project demonstrates understanding of patterns, not building production scale. Adding Kafka/Kubernetes would obscure the core patterns without adding learning value for a portfolio project.
+
+---
+
 ## Project Structure
 
 This repository is a monorepo managing all services and infrastructure.
@@ -191,6 +267,20 @@ Serverless-Fintech-Ecosystem/
 ---
 
 ## How to Deploy
+
+## ⚠️ Important Note for Evaluators
+
+**This is a portfolio/learning project, not production software.**
+
+What this means:
+- ✅ Demonstrates understanding of patterns and best practices
+- ✅ Actually works (deployed and testable)
+- ✅ Has test coverage for core business logic
+- ❌ Not hardened for production security (e.g., no WAF, rate limiting is basic)
+- ❌ Not optimized for cost at scale (would need reserved capacity, better caching)
+- ❌ No monitoring/alerting beyond basic CloudWatch (would need proper observability stack)
+
+**For hiring managers:** The architecture patterns here are production-ready. The implementation demonstrates I understand how to build reliable distributed systems. In a real production environment, I'd add operational maturity (monitoring, security hardening, cost optimization) under team guidance.
 
 This project uses **Terraform Workspaces** to manage separate `stg` (staging) and `prd` (production) environments.
 
