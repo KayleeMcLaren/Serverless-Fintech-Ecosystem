@@ -1,5 +1,4 @@
-![header](https://capsule-render.vercel.app/api?type=waving&height=200&color=gradient&text=Serverless%20Fintech%20Ecosystem&fontSize=35&strokeWidth=0&desc=An%20Event-Driven%20Microservice%20Portfolio%20on%20AWS&descAlign=50&descAlignY=62&reversal=false&fontAlign=50&fontAlignY=40)
-
+# Serverless Fintech Ecosystem 
 ## Live Demo
 
 **[https://d18l23eogq3lrf.cloudfront.net/](https://d18l23eogq3lrf.cloudfront.net/)**
@@ -42,7 +41,7 @@ This project was developed with a relentless focus on modern, cloud-native engin
 
 **Solo project:** I designed, built, tested, and deployed this entire system independently. Every architectural decision, every line of code, every test is mine.
 
-**Why this matters:** In my day job at AIMLScore, I was part of a 4-person team where I owned specific components (dashboard, infrastructure) but worked under senior developer guidance for overall architecture. This project demonstrates I can also architect complete systems from scratch.
+**Why this matters:** In my day job at AIMLScore, I was part of a 4-person engineering team where I owned specific components (dashboard, infrastructure) but worked under senior developer guidance for overall architecture. This project demonstrates I can also architect complete systems from scratch.
 
 **Time investment:** Built over 3 months (Oct 2025 - Dec 2025) while working full-time, averaging 15-20 hours per week.
 
