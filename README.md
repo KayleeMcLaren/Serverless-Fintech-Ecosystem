@@ -44,7 +44,7 @@ This project was developed with a relentless focus on modern, cloud-native engin
 
 **Why this matters:** In my day job at AIMLScore, I was part of a 4-person team where I owned specific components (dashboard, infrastructure) but worked under senior developer guidance for overall architecture. This project demonstrates I can also architect complete systems from scratch.
 
-**Time investment:** Built over 3 months (Oct 2025 - Jan 2026) while working full-time, averaging 15-20 hours per week.
+**Time investment:** Built over 3 months (Oct 2025 - Dec 2025) while working full-time, averaging 15-20 hours per week.
 
 **What I learned:**
 - Event choreography is powerful but debugging is harder (implemented structured logging to compensate)
