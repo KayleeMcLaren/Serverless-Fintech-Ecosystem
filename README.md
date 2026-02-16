@@ -267,19 +267,16 @@ Serverless-Fintech-Ecosystem/
 
 ## How to Deploy
 
-## ⚠️ Important Note for Evaluators
+**⚠️This is a portfolio/learning project, not production software.**
 
-**This is a portfolio/learning project, not production software.**
+Lambda was chosen for this demo for rapid iteration. For production fintech 
+systems requiring:
+- Consistent performance SLAs
+- Complex networking requirements
+- Stateful services
+- Higher control over resources
 
-What this means:
-- ✅ Demonstrates understanding of patterns and best practices
-- ✅ Actually works (deployed and testable)
-- ✅ Has test coverage for core business logic
-- ❌ Not hardened for production security (e.g., no WAF, rate limiting is basic)
-- ❌ Not optimized for cost at scale (would need reserved capacity, better caching)
-- ❌ No monitoring/alerting beyond basic CloudWatch (would need proper observability stack)
-
-**For hiring managers:** The architecture patterns here are production-ready. The implementation demonstrates I understand how to build reliable distributed systems. In a real production environment, I'd add operational maturity (monitoring, security hardening, cost optimization) under team guidance.
+I would architect with containerized services on ECS/EKS.
 
 This project uses **Terraform Workspaces** to manage separate `stg` (staging) and `prd` (production) environments.
 
